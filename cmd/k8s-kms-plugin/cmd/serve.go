@@ -8,7 +8,6 @@ package cmd
 //   - crypto11
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -294,43 +293,57 @@ func init() {
 	serveCmd.MarkFlagsMutuallyExclusive("p11-hmac-id", "p11-hmac-label")
 }
 
+// newCrypto11Config builds the crypto11 configuration that opens one PKCS #11 token.
+//
+// `serve` needs one of these and `serve rotation` needs two — the active KEK's token and the old
+// KEK's, which may be a different token on a different HSM. It is one function rather than a
+// copy of the same switch per token precisely because the copies are what allowed the old KEK's
+// configuration to be handed to NewP11 as the active one; see
+// TestInitRotatedProvider_ActiveTokenIsOpenedFromServeFlags.
+func newCrypto11Config(providerName, lib, pin, tokenLabel string, slot int) (*crypto11.Config, error) {
+	config := &crypto11.Config{Path: lib, Pin: pin}
+
+	switch providerName {
+	case "p11", "softhsm":
+		slog.Log(context.Background(), logging.LevelTrace, "crypto11 config: case p11 or softhsm", "p11_lib", lib)
+		config.UseGCMIVFromHSM = false
+
+	case "luna", "dpod":
+		// These generate the GCM IV on the HSM: it must not be supplied for encryption, and must
+		// be supplied back to the HSM for decryption.
+		slog.Log(context.Background(), logging.LevelTrace, "crypto11 config: case luna HSM or dpod", "p11_lib", lib)
+		config.UseGCMIVFromHSM = true
+		config.GCMIVFromHSMControl = crypto11.GCMIVFromHSMConfig{
+			SupplyIvForHSMGCMEncrypt: false,
+			SupplyIvForHSMGCMDecrypt: true,
+		}
+
+	default:
+		return nil, fmt.Errorf("unknown provider %q: must be one of p11, softhsm, luna, dpod", providerName)
+	}
+
+	// The token label identifies the token on its own; the slot number is the fallback for a
+	// label that does not identify exactly one token.
+	if tokenLabel != "" {
+		config.TokenLabel = tokenLabel
+	} else {
+		config.SlotNumber = &slot
+	}
+
+	return config, nil
+}
+
 func initProvider() (p providers.Provider, err error) {
 	// Validated by sanitizeServeFlags; cast directly to the provider sentinel.
 	alg := jose.Alg(flagsServe.AlgorithmFamily)
 
-	// init the provider config from user input
-	config := &crypto11.Config{}
-	switch flagsServe.Provider {
-	case "p11", "softhsm":
-		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case p11 or softhsm")
-		config = &crypto11.Config{
-			Path:            flagsServe.P11Lib,
-			Pin:             flagsServe.P11Pin,
-			UseGCMIVFromHSM: false,
-		}
-
-	case "luna", "dpod":
-		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case luna HSM or dpod")
-		config = &crypto11.Config{
-			Path:            flagsServe.P11Lib,
-			Pin:             flagsServe.P11Pin,
-			UseGCMIVFromHSM: true,
-			GCMIVFromHSMControl: crypto11.GCMIVFromHSMConfig{
-				SupplyIvForHSMGCMEncrypt: false,
-				SupplyIvForHSMGCMDecrypt: true,
-			},
-		}
-	default:
-		slog.Error("unknown provider", "provider", flagsServe.Provider)
-		err = errors.New("unknown provider")
+	var config *crypto11.Config
+	if config, err = newCrypto11Config(
+		flagsServe.Provider, flagsServe.P11Lib, flagsServe.P11Pin, flagsServe.P11Label, flagsServe.P11Slot,
+	); err != nil {
 		return
 	}
 
-	if flagsServe.P11Label != "" {
-		config.TokenLabel = flagsServe.P11Label
-	} else {
-		config.SlotNumber = &flagsServe.P11Slot
-	}
 	// init the provider for active key only (no key rotation)
 	// TODO: See https://github.com/eclipse-keysealer/k8s-kms-plugin/issues/40#issuecomment-2593267852
 	if p, err = providers.NewP11(

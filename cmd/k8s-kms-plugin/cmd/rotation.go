@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -236,81 +235,30 @@ func sanitizeRotationFlags(f *RotationFlags) error {
 func initRotatedProvider() (pRot providers.Provider, err error) {
 	// Active key — validated by sanitizeServeFlags; cast directly to provider sentinel.
 	activeAlg := jose.Alg(flagsServe.AlgorithmFamily)
-
-	// init the provider activeConfig from user input
-	activeConfig := &crypto11.Config{}
-	switch flagsServe.Provider {
-	case "p11", "softhsm":
-		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case p11 or softhsm")
-		activeConfig = &crypto11.Config{
-			Path:            flagsServe.P11Lib,
-			Pin:             flagsServe.P11Pin,
-			UseGCMIVFromHSM: false,
-		}
-
-	case "luna", "dpod":
-		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case luna HSM or dpod")
-		activeConfig = &crypto11.Config{
-			Path:            flagsServe.P11Lib,
-			Pin:             flagsServe.P11Pin,
-			UseGCMIVFromHSM: true,
-			GCMIVFromHSMControl: crypto11.GCMIVFromHSMConfig{
-				SupplyIvForHSMGCMEncrypt: false,
-				SupplyIvForHSMGCMDecrypt: true,
-			},
-		}
-	default:
-		slog.Error("unknown provider", "provider", flagsServe.Provider)
-		err = errors.New("unknown provider")
-		return
-	}
-
-	if flagsServe.P11Label != "" {
-		activeConfig.TokenLabel = flagsServe.P11Label
-	} else {
-		activeConfig.SlotNumber = &flagsServe.P11Slot
-	}
-
 	// Rotated old key — validated by sanitizeRotationFlags; cast directly to provider sentinel.
 	rotatedAlg := jose.Alg(flagsRotation.OldAlgorithmFamily)
 
-	// init the provider oldConfig from user input
-	oldConfig := &crypto11.Config{}
-	switch flagsRotation.OldProvider {
-	case "p11", "softhsm":
-		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case p11 or softhsm")
-		oldConfig = &crypto11.Config{
-			Path:            flagsRotation.OldP11Lib,
-			Pin:             flagsRotation.OldP11Pin,
-			UseGCMIVFromHSM: false,
-		}
-
-	case "luna", "dpod":
-		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case luna HSM or dpod")
-		oldConfig = &crypto11.Config{
-			Path:            flagsRotation.OldP11Lib,
-			Pin:             flagsRotation.OldP11Pin,
-			UseGCMIVFromHSM: true,
-			GCMIVFromHSMControl: crypto11.GCMIVFromHSMConfig{
-				SupplyIvForHSMGCMEncrypt: false,
-				SupplyIvForHSMGCMDecrypt: true,
-			},
-		}
-	default:
-		slog.Error("unknown provider", "provider", flagsRotation.OldProvider)
-		err = errors.New("unknown provider")
+	// Two tokens, described by two disjoint sets of flags: the active KEK keeps the flags of the
+	// parent `serve` command, the old KEK has its own --old-* set. They may be different tokens on
+	// different HSMs, which is the whole reason the second set exists, so the two configurations
+	// must not be crossed or shared.
+	var activeConfig, oldConfig *crypto11.Config
+	if activeConfig, err = newCrypto11Config(
+		flagsServe.Provider, flagsServe.P11Lib, flagsServe.P11Pin, flagsServe.P11Label, flagsServe.P11Slot,
+	); err != nil {
+		return
+	}
+	if oldConfig, err = newCrypto11Config(
+		flagsRotation.OldProvider, flagsRotation.OldP11Lib, flagsRotation.OldP11Pin,
+		flagsRotation.OldP11Label, flagsRotation.OldP11Slot,
+	); err != nil {
 		return
 	}
 
-	if flagsRotation.OldP11Label != "" {
-		oldConfig.TokenLabel = flagsRotation.OldP11Label
-	} else {
-		oldConfig.SlotNumber = &flagsRotation.OldP11Slot
-	}
 	// init the provider
 	// TODO: See https://github.com/eclipse-keysealer/k8s-kms-plugin/issues/40#issuecomment-2593267852
 	if pRot, err = providers.NewP11(
-		oldConfig,
+		activeConfig,
 		flagsServe.CreateKey,
 		flagsServe.KekKeyID,
 		flagsServe.DekKeyLabel,

@@ -5,6 +5,29 @@ history see [GitHub Releases](https://github.com/eclipse-keysealer/k8s-kms-plugi
 
 ## Unreleased
 
+### Fixed
+
+- **`serve rotation` opened the old KEK's token for the active KEK too.** `initRotatedProvider`
+  built the active token's `crypto11.Config` from the `serve` flags, never used it, and passed
+  the old KEK's configuration to `NewP11` as *both* the active and the rotation configuration. So
+  `p.ctx` — the context that resolves the active KEK and performs every encryption — was opened
+  against the old KEK's token, PIN and driver quirks. Where both KEKs live on one token the two
+  configurations are identical and nothing is visibly wrong, which is why it survived: every
+  rotation test in `test/e2e` and `test/integration` uses a single shared token by design. It
+  broke exactly the case the second set of `--old-p11-*` flags exists for — an old KEK on another
+  token or another HSM — where the active KEK would be looked up on the wrong token, and
+  `--p11-pin`, `--p11-label`, `--p11-slot` and `--provider` were silently ignored in favour of
+  their `--old-*` counterparts.
+
+  The switch that builds a `crypto11.Config` was extracted to `newCrypto11Config`, so the two
+  tokens are now built by one function from two disjoint sets of flags rather than by three
+  copies of the same block; passing the wrong one no longer compiles.
+  `TestInitRotatedProvider_ActiveTokenIsOpenedFromServeFlags` pins the wiring by giving the two
+  tokens different PKCS #11 library paths and asserting which one is opened — no HSM required,
+  since what is asserted is which path reaches crypto11, not that anything succeeds. An unknown
+  `--provider` / `--old-provider` now also names the offending value instead of reporting a bare
+  "unknown provider".
+
 ### Removed
 
 - **`--native-path` / `-p`, `--old-native-path` and `--old-socket` are gone.** All three were
