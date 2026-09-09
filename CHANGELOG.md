@@ -31,6 +31,13 @@ history see [GitHub Releases](https://github.com/eclipse-keysealer/k8s-kms-plugi
     was never searched for (the searched name is `k8s-kms-plugin.conf.{yaml,yml,json,toml}`);
   - the `serve` and `serve rotation` help pinned `k8s.io/kms@v0.34.1` while the module is on
     v0.36.3, and pointed at a repository-relative path an installed binary cannot resolve;
+  - **pkg.go.dev links are now uniform and unpinned everywhere.** Three links had drifted to two
+    stale versions — `k8s.io/kms@v0.34.1` in `README.md` and `k8s.io/kms@v0.31.3` twice in a
+    `pkg/providers/p11.go` doc comment — while `go.mod` was on v0.36.3 and the other ~18 links
+    already used the unpinned form. They all use `https://pkg.go.dev/k8s.io/kms/apis/v2` now,
+    which follows the module, and `make check-doc-links` fails on a pinned pkg.go.dev URL in
+    Markdown or in a Go doc comment so they cannot drift apart again. A stray backtick inside a
+    `StatusRequest` link in `docs/kubernetes-guides/k3s-kubernetes.md` is fixed too;
   - `serve rotation` called itself "k8s-kms-pluginc".
   The scattered, inconsistent `Env var: …` suffixes are replaced by one line under the flags
   explaining how every flag maps to an environment variable and a config file key.

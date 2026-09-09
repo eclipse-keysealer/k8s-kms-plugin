@@ -1013,9 +1013,9 @@ func (p *P11) UnaryInterceptor(ctx context.Context, req interface{}, _ *grpc.Una
 // The returned StatusResponse contains the KeyID of the KEK (CKA_ID), the Healthz and the Version.
 //
 // Status() method comes from the KeyManagementServiceClient interface from "k8s.io/kms/apis/v2"
-// See https://pkg.go.dev/k8s.io/kms@v0.31.3/apis/v2#KeyManagementServiceClient
+// See https://pkg.go.dev/k8s.io/kms/apis/v2#KeyManagementServiceClient
 // Also check the content of a StatusResponse
-// See https://pkg.go.dev/k8s.io/kms@v0.31.3/apis/v2#StatusResponse
+// See https://pkg.go.dev/k8s.io/kms/apis/v2#StatusResponse
 func (p *P11) Status(ctx context.Context, _ *k8skmsv2.StatusRequest) (statusResponse *k8skmsv2.StatusResponse, err error) {
 	slog.Log(ctx, logging.LevelTrace, "p11 Status: entering method")
 

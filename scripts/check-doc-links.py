@@ -8,10 +8,11 @@ Run it with `make check-doc-links`, or directly:
 
     python3 scripts/check-doc-links.py [--quiet] [paths...]
 
-Two failure modes are reported:
+Three failure modes are reported:
 
   missing file   a relative link whose target does not exist on disk
   dead anchor    a #fragment that matches no heading in the target file
+  pinned version a pkg.go.dev URL that names a module version (see below)
 
 Anchors are the ones that rot silently. Manually numbered headings made this worse — the anchors
 README.md used for docs/README.md drifted out of sync with the section numbers and pointed at the
@@ -20,6 +21,14 @@ breakage without a single broken build.
 
 Only relative links are checked. External http(s) targets are skipped deliberately: reaching the
 network would make the check slow, flaky and dependent on third-party uptime.
+
+The one exception is a *shape* check on pkg.go.dev URLs, which needs no network. A URL that pins
+a module version — https://pkg.go.dev/k8s.io/kms@v0.31.3/apis/v2 — freezes at whatever release
+happened to be current when it was written, and nothing updates it on a dependency bump. Three
+such links had drifted to three different versions (v0.31.3, v0.34.1) while go.mod was on v0.36.3,
+in a README, a Go doc comment and the CLI help. Dropping the "@version" makes pkg.go.dev serve the
+latest release, which is what a reader following the link wants. Go doc comments are checked too:
+they are documentation, and pkg.go.dev renders them.
 """
 
 from __future__ import annotations
@@ -49,6 +58,15 @@ HEADING = re.compile(r"^#{1,6}\s+(?P<text>.*?)\s*$")
 HTML_ANCHOR = re.compile(r'<a\s+(?:id|name)="(?P<id>[^"]+)"')
 INLINE_LINK_TEXT = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 SKIP_SCHEMES = ("http://", "https://", "mailto:", "tel:", "ftp://")
+
+# A pkg.go.dev URL carrying an "@version" between the module path and the package path. The
+# version has to look like a real one (v1.2.3, v0.0.0-2020…-abcdef, v2.0.0-rc4) so that prose
+# writing "@<version>" to describe the rule is not itself flagged.
+PINNED_PKG_URL = re.compile(r"pkg\.go\.dev/(?P<module>[^@\s)\"]+)@(?P<version>v\d[^/\s)\"]*)")
+
+# Where a pkg.go.dev link can appear. Markdown comes from the paths being checked; Go doc
+# comments are added here because they are rendered as documentation too.
+GO_SOURCE_PATHS = [Path("cmd"), Path("pkg"), Path("tools"), Path("test")]
 
 
 def github_slug(text: str) -> str:
@@ -87,6 +105,30 @@ def anchors_of(path: Path) -> set[str]:
         found.update(HTML_ANCHOR.findall(line))
 
     return found
+
+
+def go_files() -> list[Path]:
+    """Every Go source file whose doc comments may carry a pkg.go.dev link."""
+    out: list[Path] = []
+    for rel in GO_SOURCE_PATHS:
+        p = REPO / rel
+        if p.is_dir():
+            out.extend(sorted(p.rglob("*.go")))
+    return out
+
+
+def pinned_pkg_urls(files: list[Path]) -> list[str]:
+    """Report every pkg.go.dev URL that pins a module version."""
+    problems: list[str] = []
+    for path in files:
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for m in PINNED_PKG_URL.finditer(line):
+                here = path.relative_to(REPO)
+                problems.append(
+                    f"{here}:{n}: pinned version -> pkg.go.dev/{m.group('module')}@{m.group('version')}"
+                    f" (drop the @{m.group('version')})"
+                )
+    return problems
 
 
 def markdown_files(paths: list[Path]) -> list[Path]:
@@ -148,6 +190,9 @@ def main() -> int:
             if frag not in anchor_cache[target]:
                 problems.append(f"{here}: dead anchor -> {url}")
 
+    pkg_files = files + go_files()
+    problems.extend(pinned_pkg_urls(pkg_files))
+
     if problems:
         print(f"check-doc-links: {len(problems)} broken link(s) of {checked} checked:\n", file=sys.stderr)
         for p in problems:
@@ -155,7 +200,8 @@ def main() -> int:
         return 1
 
     if not args.quiet:
-        print(f"check-doc-links: {checked} relative links across {len(files)} files all resolve")
+        print(f"check-doc-links: {checked} relative links across {len(files)} files all resolve, "
+              f"no pinned pkg.go.dev URL in {len(pkg_files)} files")
     return 0
 
 

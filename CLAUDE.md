@@ -150,6 +150,11 @@ committed tree stays free of volatile data.
 `#anchor` in `README.md`, `CHANGELOG.md` and `docs/`. Anchors rot silently, so run it after moving
 or renaming anything under `docs/`.
 
+It also rejects a **pkg.go.dev URL that pins a module version**, across Markdown *and* Go doc
+comments (`cmd/`, `pkg/`, `tools/`, `test/`). `https://pkg.go.dev/k8s.io/kms/apis/v2` follows the
+module; inserting an `@<version>` freezes it and nothing updates it on a dependency bump — which is
+how three links ended up on two stale versions while `go.mod` was on a third.
+
 Headings carry **no manual section numbers** — they were removed because a static site generator
 derives ordering from the document tree, and the hand-written numbers had already drifted out of
 sync with the anchors pointing at them. Do not reintroduce `## 1.`-style numbering; ordering for the
