@@ -11,7 +11,6 @@ import (
 	version "github.com/eclipse-keysealer/k8s-kms-plugin/pkg/version"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 // CLI options pflags names
@@ -20,14 +19,15 @@ var outputFormat string // One of 'yaml' or 'json'.
 // prettyPrintVersion defined by the user with flag --pretty
 var prettyPrintVersion bool
 
-// ViperFlagsVersion defines a struct to hold the values of cobra CLI flags and use viper to populate them
-type ViperFlagsVersion struct {
-	OutputFormat       string `mapstructure:"output"`
-	PrettyPrintVersion bool   `mapstructure:"pretty"`
+// VersionFlags holds the resolved values of the version command flags. The koanf tags are the long
+// flag names, which are also the keys of the k8s-kms-plugin.version section of the config file.
+type VersionFlags struct {
+	OutputFormat       string `koanf:"output"`
+	PrettyPrintVersion bool   `koanf:"pretty"`
 }
 
-// Declare the viper CLI flag values buffer
-var vprFlgsVersion ViperFlagsVersion
+// flagsVersion holds the resolved version command configuration.
+var flagsVersion VersionFlags
 
 // versionCmd represents the version command
 var versionCmd = &cobra.Command{
@@ -46,17 +46,17 @@ Print the version with git repository details as a one-line JSON string:
 Print the version as indented YAML:
 	k8s-kms-plugin version -o yaml
 `,
-	// Initialize and populate cobra CLI flags values with viper during the Persistent pre-run
+	// Resolve the version flags from all input sources during the persistent pre-run
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		if err := InitViperSubCmdE(viper.GetViper(), cmd, &vprFlgsVersion); err != nil {
-			slog.Error("Error initializing Viper", "cobra_cmd", cmd.Use, "error", err)
+		if _, err := resolveCmdConfigE(cmd, &flagsVersion); err != nil {
+			slog.Error("error resolving configuration", "cobra_cmd", cmd.Name(), "error", err)
 			return err
 		}
 		return nil
 	},
 	Run: func(cmd *cobra.Command, _ []string) {
 		// Output version info
-		if _, err := fmt.Fprintln(cmd.OutOrStdout(), version.OutputToString(vprFlgsVersion.OutputFormat, vprFlgsVersion.PrettyPrintVersion)); err != nil {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), version.OutputToString(flagsVersion.OutputFormat, flagsVersion.PrettyPrintVersion)); err != nil {
 			slog.Error("error writing version output", "error", err)
 		}
 	},
@@ -66,9 +66,7 @@ func init() {
 	// rootCmd is the parent command
 	rootCmd.AddCommand(versionCmd)
 
-	// Since this project uses Viper bind with Cobra flags, we generally do not need to use "Flags().*Var"
-	// (like StringVar, BoolVar, Uint16Var, etc...) as we do not need to access the cobra flag values directly. This is
-	// because we use Viper to retrieve the values of the flags.
+	// Flag values are read from the VersionFlags struct that koanf populates.
 
 	// Here you will define your flags and configuration settings.
 	versionCmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Format of the version output. One of 'yaml' or 'json'. Env var: K8S_KMS_PLUGIN_VERSION_OUTPUT")

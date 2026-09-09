@@ -15,7 +15,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 
 	"github.com/eclipse-keysealer/k8s-kms-plugin/pkg/logging"
 	"github.com/eclipse-keysealer/k8s-kms-plugin/pkg/version"
@@ -23,33 +22,34 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
-// ViperFlagsDocs defines a struct to hold the values of cobra CLI flags and use viper to populate them
-type ViperFlagsDocs struct {
-	Format     string `mapstructure:"format"`
-	OutputDir  string `mapstructure:"output-dir"`
-	Provenance bool   `mapstructure:"provenance"`
+// DocsFlags holds the resolved values of the docs command flags. The koanf tags are the long flag
+// names, which are also the keys of the k8s-kms-plugin.docs section of the config file.
+type DocsFlags struct {
+	Format     string `koanf:"format"`
+	OutputDir  string `koanf:"output-dir"`
+	Provenance bool   `koanf:"provenance"`
 }
 
-// Declare the viper CLI flag values buffer
-var vprFlgsDocs ViperFlagsDocs
+// flagsDocs holds the resolved docs command configuration.
+var flagsDocs DocsFlags
 
 // docsCmd represents the docs command
 var docsCmd = &cobra.Command{
 	Use:   "docs",
 	Short: "Generate CLI documentation",
 	Long:  `Generate CLI documentation (markdown, man, rst, html)"`,
-	// Initialize and populate cobra CLI flags values with viper during the Persistent pre-run
+	// Resolve the docs flags from all input sources during the persistent pre-run
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		if err := InitViperSubCmdE(viper.GetViper(), cmd, &vprFlgsDocs); err != nil {
-			slog.Error("Error initializing Viper", "cobra_cmd", cmd.Use, "error", err)
+		if _, err := resolveCmdConfigE(cmd, &flagsDocs); err != nil {
+			slog.Error("error resolving configuration", "cobra_cmd", cmd.Name(), "error", err)
 			return err
 		}
 		return nil
 	},
 	RunE: func(_ *cobra.Command, _ []string) error {
-		err := generateCobraDocs(vprFlgsDocs.Format, vprFlgsDocs.OutputDir, vprFlgsDocs.Provenance)
+		err := generateCobraDocs(flagsDocs.Format, flagsDocs.OutputDir, flagsDocs.Provenance)
 		if err != nil {
-			slog.Error("error generating docs", "format", vprFlgsDocs.Format, "output_dir", vprFlgsDocs.OutputDir, "error", err)
+			slog.Error("error generating docs", "format", flagsDocs.Format, "output_dir", flagsDocs.OutputDir, "error", err)
 		}
 		return err
 	},
@@ -302,7 +302,7 @@ func genMarkdownTreeWithFrontMatter(root *cobra.Command, dir string, provenance 
 //   - Flag: the flag name
 //   - Short Flag: the short flag name
 //   - Env Var: the environment variable name for the flag
-//   - Viper Key: the viper key for the flag
+//   - Config File Keys: the configuration file key path of the flag
 //   - Default: the default value for the flag
 //   - Type: the type of the flag
 //   - Persistent Flag: whether the flag is persistent
@@ -391,13 +391,13 @@ func flagTableFrontMatter(provenance bool) string {
 	}, provenance)
 }
 
-// walkCobraFlagsPretty traverses the cobra command tree and prints a pretty table of flags -> env vars -> viper keys
+// walkCobraFlagsPretty traverses the cobra command tree and prints a pretty table of flags -> env vars -> config file keys
 // Only local and non-persistent flags are printed. Local persistent flags are printed as well, but only for the local commands
 // and not its subcommands.
 // The table is printed to t, which is a table.Writer
-// The section is the path for a flag in a Viper configuration file, obtained by replacing spaces with dots in the command path
+// The section is the path for a flag in a configuration file, obtained by replacing spaces with dots in the command path
 func walkCobraFlagsPretty(cmd *cobra.Command, t table.Writer) {
-	// section is the path (JSON, YAML) for a flag in a Viper configuration file
+	// section is the path (YAML, TOML, JSON) for a flag in a configuration file
 	section := strings.ReplaceAll(cmd.CommandPath(), " ", ".")
 
 	// Add only flags that are local and do not add persistent flags
@@ -434,7 +434,7 @@ func walkCobraFlagsPretty(cmd *cobra.Command, t table.Writer) {
 // Inputs:
 // - cmd: the cobra command that contains the flag
 // - f: the flag
-// - section: the path (JSON, YAML) for a flag in a Viper configuration file
+// - section: the path (YAML, TOML, JSON) for a flag in a configuration file
 // - persistent: whether the flag is a persistent flag or not
 //
 // The columns of the table are:
@@ -442,7 +442,7 @@ func walkCobraFlagsPretty(cmd *cobra.Command, t table.Writer) {
 // - Flag: the flag name. Example: --host
 // - Short Flag: the short flag name. Example: -p
 // - Env Var: the environment variable name that can be used to override the flag. Example: K8S_KMS_PLUGIN_SERVE_HOST.
-// - Viper Key: the full key path in a Viper configuration file (JSON or YAML). Example: k8s-kms-plugin.serve.host
+// - Config File Keys: the full key path in a configuration file (YAML, TOML or JSON). Example: k8s-kms-plugin.serve.host
 // - Default: the default value of the flag. Example: host => 0.0.0.0
 // - Type: the type of the flag. Example: string
 // - Persistent Flag: whether the flag is a persistent flag
@@ -455,9 +455,9 @@ func buildTableRow(cmd *cobra.Command, f *pflag.Flag, section string, persistent
 	// envVar is the environment variable name that can be used to override the flag. Ex.: K8S_KMS_PLUGIN_SERVE_HOST
 	envVar := envVarPrefix + "_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
 
-	// viperKey is the keyname and fullpath for the viper configuration file (JSON or YAML)
+	// configKey is the key name and full path for the configuration file (YAML, TOML or JSON)
 	// Example: k8s-kms-plugin.serve.host for the command k8s-kms-plugin serve --host
-	viperKey := section + "." + f.Name
+	configKey := section + "." + f.Name
 
 	return table.Row{
 		cmd.CommandPath(),
@@ -470,7 +470,7 @@ func buildTableRow(cmd *cobra.Command, f *pflag.Flag, section string, persistent
 			return ""
 		}(),
 		envVar,
-		viperKey,
+		configKey,
 		f.DefValue,
 		f.Value.Type(),
 		persistent,

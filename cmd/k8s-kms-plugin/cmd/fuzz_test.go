@@ -4,10 +4,10 @@
 package cmd
 
 import (
-	"strings"
 	"testing"
 
-	"github.com/spf13/viper"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/spf13/cobra"
 )
 
 // FuzzAlgorithmFamilySet drives the --algorithm-family flag parser with arbitrary strings.
@@ -50,40 +50,54 @@ func FuzzAlgorithmFamilySet(f *testing.F) {
 	})
 }
 
-// FuzzUnmarshalSubMergedE drives the config-file path with arbitrary YAML.
+// FuzzResolveCmdConfig drives the configuration file path with arbitrary YAML.
 //
-// UnmarshalSubMergedE reimplements part of viper's priority chain by hand (GetStringMap →
-// MergeConfigMap → Unmarshal), so it handles config shapes viper's own Sub() never sees:
-// a "serve" key that is a scalar rather than a map, deeply nested maps, non-string keys,
-// duplicate keys. Any of those reaching MergeConfigMap is a plausible panic source, and a
-// malformed config file must produce an error rather than take the process down.
+// resolveCmdConfigE composes the priority chain by hand (config file section, then environment
+// variables, then flags), so it meets config shapes a well-formed file never has: a "serve" key
+// that is a scalar rather than a map, a value whose type does not match the flag it lands on,
+// deep nesting, keys that are themselves dotted paths. Any of those reaching koanf's merge or
+// mapstructure's decoder is a plausible panic source, and a malformed config file must produce
+// an error rather than take the process down.
 //
-// The target asserts the crash-freedom contract only. Which config wins is a priority-chain
-// question the table tests in serve_test.go already cover with realistic inputs.
-func FuzzUnmarshalSubMergedE(f *testing.F) {
-	f.Add("serve:\n  p11-lib: /usr/lib/softhsm/libsofthsm2.so\n  p11-slot: 0\n")
-	f.Add("serve:\n  algorithm-family: ml-kem\n  p11-key-id: dca85912cc5e712d\n")
-	f.Add("serve: not-a-map\n")               // section is a scalar
-	f.Add("serve:\n  p11-slot: not-an-int\n") // type mismatch against ViperFlagsServe
-	f.Add("serve:\n  serve:\n    serve: {}\n")
-	f.Add("serve: {}\n")
+// The target asserts the crash-freedom contract only. Which source wins is a priority-chain
+// question the table tests in config_test.go cover with realistic inputs.
+func FuzzResolveCmdConfig(f *testing.F) {
+	f.Add("k8s-kms-plugin:\n  serve:\n    p11-lib: /usr/lib/softhsm/libsofthsm2.so\n    p11-slot: 0\n")
+	f.Add("k8s-kms-plugin:\n  serve:\n    algorithm-family: ml-kem\n    p11-key-id: dca85912cc5e712d\n")
+	f.Add("k8s-kms-plugin.serve.socket: /run/k8s-kms-plugin.sock\n") // section spelled as one dotted key
+	f.Add("k8s-kms-plugin:\n  serve: not-a-map\n")                   // section is a scalar
+	f.Add("k8s-kms-plugin:\n  serve:\n    p11-slot: not-an-int\n")   // type mismatch against ServeFlags
+	f.Add("k8s-kms-plugin:\n  serve:\n    serve:\n      serve: {}\n")
+	f.Add("k8s-kms-plugin:\n  serve: {}\n")
 	f.Add("")
 
 	// The target asserts crash-freedom only, so it never reports through t.
 	f.Fuzz(func(_ *testing.T, config string) {
-		v := viper.New()
-		v.SetConfigType("yaml")
-		if err := v.ReadConfig(strings.NewReader(config)); err != nil {
-			return // not valid YAML; the CLI rejects it before UnmarshalSubMergedE is reached
+		k, err := parseConfig([]byte(config), yaml.Parser())
+		if err != nil {
+			return // not valid YAML; the CLI rejects it before any command is resolved
 		}
 
-		// ConfigFileUsed() is empty for ReadConfig, which short-circuits UnmarshalSubMergedE at
-		// step 1. Set a path so the fuzzer reaches the GetStringMap/MergeConfigMap logic that is
-		// the point of this target.
-		v.SetConfigFile("fuzz.yaml")
+		// resolveCmdConfigE reads the config file layer from the package-level instance.
+		saved := configK
+		configK = k
+		defer func() { configK = saved }()
 
-		var target ViperFlagsServe
-		// An error is a valid outcome for malformed config; a panic is not.
-		_ = UnmarshalSubMergedE(v, "serve", &target)
+		// A throwaway command tree so the fuzzer never mutates the real one, with the same
+		// command path — and therefore the same config section — as `k8s-kms-plugin serve`.
+		root := &cobra.Command{Use: "k8s-kms-plugin"}
+		serve := &cobra.Command{Use: "serve"}
+		root.AddCommand(serve)
+		alg := AlgorithmFamilyAESGCM
+		serve.Flags().Var(&alg, "algorithm-family", "")
+		serve.Flags().String("p11-lib", "", "")
+		serve.Flags().String("p11-key-id", "", "")
+		serve.Flags().String("socket", "/tmp/k8s-kms-plugin.sock", "")
+		serve.Flags().Int("p11-slot", 0, "")
+		serve.Flags().Bool("auto-create", false, "")
+
+		var target ServeFlags
+		// An error is a valid outcome for a malformed config; a panic is not.
+		_, _ = resolveCmdConfigE(serve, &target)
 	})
 }

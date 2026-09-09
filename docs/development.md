@@ -9,7 +9,7 @@ Repository layout:
 
 | Path                                                      | Contents                                                                        |
 |-----------------------------------------------------------|---------------------------------------------------------------------------------|
-| [`cmd/k8s-kms-plugin/`](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/cmd/k8s-kms-plugin/)            | CLI entry point: Cobra commands and the Cobra ↔ Viper binding                    |
+| [`cmd/k8s-kms-plugin/`](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/cmd/k8s-kms-plugin/)            | CLI entry point: Cobra commands and the Cobra ↔ koanf binding                    |
 | [`pkg/`](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/pkg/)                                          | Plugin implementation: KMS v2 gRPC service and PKCS #11 providers                |
 | [`tools/create-dev-token/`](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/tools/create-dev-token/)    | Standalone helper that bootstraps a SoftHSM development token                    |
 | [`test/integration/`](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/test/integration/), [`test/e2e/`](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/test/e2e/) | Integration and end-to-end test suites                               |

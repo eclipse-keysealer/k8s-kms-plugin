@@ -3,6 +3,42 @@
 All notable changes to k8s-kms-plugin are documented in this file. For the full commit-level
 history see [GitHub Releases](https://github.com/eclipse-keysealer/k8s-kms-plugin/releases).
 
+## Unreleased
+
+### Changed
+
+- **Configuration resolution moved from [Viper](https://github.com/spf13/viper) to
+  [koanf](https://github.com/knadh/koanf)**, keeping Cobra for the commands and flags. The user
+  contract is unchanged: the same flags, the same `K8S_KMS_PLUGIN_*` environment variables, the
+  same config file sections, resolved with the same priority — CLI flags > environment variables >
+  configuration file > defaults. Configuration files keep mirroring the command hierarchy
+  (`k8s-kms-plugin.serve.rotation.old-p11-pin`), as do the environment variables
+  (`K8S_KMS_PLUGIN_SERVE_ROTATION_OLD_P11_PIN`). YAML, TOML and JSON are still accepted, and the
+  config file is still discovered from `--config`, then `K8S_KMS_PLUGIN_CONFIG`, then
+  `k8s-kms-plugin.conf.{yaml,yml,json,toml}` in `$HOME` or `$HOME/.config/k8s-kms-plugin/`.
+- `viper-patch-sub.go` is gone, and with it the workaround it existed for: `viper.Sub("section")`
+  dropped the flag/env/default priority chain, so `UnmarshalSubMergedE` had to merge a config
+  subsection back into the global Viper config layer before unmarshalling it. koanf layers the
+  providers explicitly — config file section, then environment, then flags — so a subsection is
+  just another layer and the ordering is stated in one place. The new
+  [`config.go`](cmd/k8s-kms-plugin/cmd/config.go) replaces it.
+- The one workaround that survives is cobra's, not Viper's: `MarkFlagsOneRequired` and
+  `MarkFlagsMutuallyExclusive` decide from whether a flag was typed on the command line, so a value
+  arriving through an environment variable or the config file is still written back into the cobra
+  flag set. It is now applied only to values a user actually provided, so a config file restating a
+  default (`debug: false`) no longer marks that flag as set — which previously could collide with
+  the flag it is mutually exclusive with.
+- `--debug` now selects the debug level from its resolved *value* rather than from the fact that it
+  was passed, so `--debug=false` no longer forces debug logging.
+- The per-command flag structs and their validators were renamed accordingly: `ViperFlagsServe` →
+  `ServeFlags`, `ViperFlagsRotation` → `RotationFlags`, `ViperFlagsRoot`/`ViperFlagsVersion`/
+  `ViperFlagsDocs` likewise, and `sanitizeViperFlagsServe` / `sanitizeViperFlagsRotation` →
+  `sanitizeServeFlags` / `sanitizeRotationFlags`. Their struct tags moved from `mapstructure` to
+  `koanf`. These are internal names; no CLI, environment variable or config file key changed.
+- Dependencies: `github.com/spf13/viper` and `github.com/mitchellh/go-homedir` (archived) are out —
+  the home directory now comes from `os.UserHomeDir`. `github.com/knadh/koanf/v2` and its yaml,
+  toml, json, env, posflag and confmap modules are in.
+
 ## v1.0.0 — first stable release: KMS v2, PKCS#11 v3.2 and ML-KEM
 
 `k8s-kms-plugin` has been on `0.x` since its start, with no stability contract. v1.0.0 is its first

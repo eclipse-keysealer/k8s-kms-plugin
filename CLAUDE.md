@@ -283,26 +283,42 @@ the one that causes bugs: a `CKA_ID` is raw bytes on the token but travels as a 
 every KMS v2 `KeyId` field. There is a compile-time assertion tying `maxCkaIDHexLen` to `maxKMSv2KeyIDSize`;
 keep it intact. Note the annotations budget is *shared* across all annotations (keys included), not per-annotation.
 
-### CLI: Cobra + Viper
+### CLI: Cobra + koanf
 
 `cmd/k8s-kms-plugin/cmd/` holds the root command plus `serve`, `serve rotation`, `docs`, `version`, and PIN entry.
 
-Configuration priority is **CLI flags > env vars > config file > defaults**. Because Viper resolves the values,
+Configuration priority is **CLI flags > env vars > config file > defaults**. Because koanf resolves the values,
 flags are generally registered *without* `Flags().StringVar(&x, …)` — values are read from a per-command
-`ViperFlags*` struct with `mapstructure` tags, not from package variables.
+`*Flags` struct (`ServeFlags`, `RotationFlags`, …) with `koanf` tags, not from package variables. The one
+exception is `--config`, which has to be known before anything else can be resolved.
 
-`viper-patch-sub.go` is essential reading before touching flag plumbing. It works around two upstream quirks:
+`config.go` is essential reading before touching flag plumbing. `resolveCmdConfigE` builds one koanf instance
+per command by layering three providers in increasing priority: the config file subsection for the command
+path, then the environment variables naming a flag that command declares, then `posflag` (which overrides only
+flags the user actually typed, and otherwise fills in defaults). That layering *is* the priority chain — there
+is no equivalent of the old `viper-patch-sub.go`, whose `UnmarshalSubMergedE` existed only because
+`viper.Sub("section")` dropped the chain for a config subsection.
 
-1. `viper.Sub("section")` loses the flag/env/default priority chain entirely, so `UnmarshalSubMergedE` merges
-   the config subsection back into the main Viper config layer before unmarshalling.
-2. Cobra's `MarkFlagsMutuallyExclusive` / `MarkFlagsOneRequired` don't see values that arrived via Viper, so
-   `InitViperSubCmdE` copies resolved Viper values back into the Cobra flags.
+One workaround survives, because it is cobra's rather than the config library's: `MarkFlagsMutuallyExclusive` /
+`MarkFlagsOneRequired` decide from pflag's `Changed` bit, which only the command line sets, so
+`syncFlagsFromConfig` writes values that arrived from the environment or the config file back into the cobra
+flag set. It skips values a user did not provide and values equal to what the flag already carries, so a config
+file restating a default does not mark a flag as set.
 
-Env var names derive from the **command path**: `serve --p11-pin` → `K8S_KMS_PLUGIN_SERVE_P11_PIN`. Config file
-sections mirror the same path (`k8s-kms-plugin.serve`).
+A command resolves only the flags it *declares* (`cmd.LocalFlags()`), not the persistent flags it inherits, so
+each flag has exactly one env var and one config key — the ones of the command it is declared on. `--log-level`
+is a root flag: `K8S_KMS_PLUGIN_LOG_LEVEL` and `k8s-kms-plugin.log-level`, never the `serve` section.
 
-Each command validates all user input in `PersistentPreRunE` via `sanitizeViperFlagsServe` /
-`sanitizeViperFlagsRotation` — that is the single choke point covering flags, env vars *and* config file values.
+Env var names derive from the **command path**: `serve --p11-pin` → `K8S_KMS_PLUGIN_SERVE_P11_PIN`,
+`serve rotation --old-p11-pin` → `K8S_KMS_PLUGIN_SERVE_ROTATION_OLD_P11_PIN`. Config file sections mirror the
+same path (`k8s-kms-plugin.serve`, `k8s-kms-plugin.serve.rotation`).
+
+`cmdConfig.IsSet` distinguishes a key the user configured from one that only carries a flag default — `posflag`
+seeds every unset key with its default, so key *existence* says nothing. `--p11-pin` depends on that
+distinction: an explicitly configured empty PIN is a no-PIN token, an absent one means "prompt".
+
+Each command validates all user input in `PersistentPreRunE` via `sanitizeServeFlags` /
+`sanitizeRotationFlags` — that is the single choke point covering flags, env vars *and* config file values.
 `--algorithm-family` is additionally validated at parse time through a `pflag.Value` implementation, so both
 paths call the same `validateAlgorithmFamily`.
 
@@ -328,8 +344,8 @@ user-facing deliverables rather than samples:
 The two `configs/` files had rotted badly and were repaired; keep them honest, because nothing
 else does:
 
-- **Viper ignores an unknown config key silently.** A stale key does not error — it leaves the setting at its
-  default. `algorithm:` (renamed to `algorithm-family:`) was quietly forcing every reader's KEK to `aes-gcm`.
+- **An unknown config key is ignored silently.** This was true of Viper and is still true of koanf: a stale key
+  does not error — it leaves the setting at its default. `algorithm:` (renamed to `algorithm-family:`) was quietly forcing every reader's KEK to `aes-gcm`.
   Every key in the example must be one the CLI actually accepts; verify by running
   `dist/k8s-kms-plugin --config configs/config.example.yaml serve` and confirming it reaches the PKCS#11
   library load rather than a validation error.

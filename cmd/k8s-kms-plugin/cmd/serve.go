@@ -27,33 +27,36 @@ import (
 	version "github.com/eclipse-keysealer/k8s-kms-plugin/pkg/version"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
-// ViperFlagsServe defines a struct to hold the values of cobra CLI flags and use viper to populate them
-type ViperFlagsServe struct {
+// ServeFlags holds the resolved values of the serve command flags. The koanf tags are the long
+// flag names, which are also the keys of the k8s-kms-plugin.serve section of the config file.
+type ServeFlags struct {
 	// PKCS #11 & KMS plugin parameters
-	AlgorithmFamily string `mapstructure:"algorithm-family"`
-	NativePath      string `mapstructure:"native-path"`
-	P11Label        string `mapstructure:"p11-label"`
-	P11Lib          string `mapstructure:"p11-lib"`
-	P11Pin          string `mapstructure:"p11-pin"`
-	P11Slot         int    `mapstructure:"p11-slot"`
-	Provider        string `mapstructure:"provider"`
-	SocketPath      string `mapstructure:"socket"` // Unix socket path
+	AlgorithmFamily string `koanf:"algorithm-family"`
+	NativePath      string `koanf:"native-path"`
+	P11Label        string `koanf:"p11-label"`
+	P11Lib          string `koanf:"p11-lib"`
+	P11Pin          string `koanf:"p11-pin"`
+	P11Slot         int    `koanf:"p11-slot"`
+	Provider        string `koanf:"provider"`
+	SocketPath      string `koanf:"socket"` // Unix socket path
 
 	// PKCS #11 CKA_ID and CKA_LABEL of active KEK key
-	CreateKey    bool   `mapstructure:"auto-create"`
-	DekKeyLabel  string `mapstructure:"p11-key-label"`  // active DEK key CKA_LABEL
-	HmacKeyID    string `mapstructure:"p11-hmac-id"`    // active HMAC key CKA_ID
-	HmacKeyLabel string `mapstructure:"p11-hmac-label"` // active HMAC key CKA_LABEL
-	KekKeyID     string `mapstructure:"p11-key-id"`     // active KEK key CKA_ID
+	CreateKey    bool   `koanf:"auto-create"`
+	DekKeyLabel  string `koanf:"p11-key-label"`  // active DEK key CKA_LABEL
+	HmacKeyID    string `koanf:"p11-hmac-id"`    // active HMAC key CKA_ID
+	HmacKeyLabel string `koanf:"p11-hmac-label"` // active HMAC key CKA_LABEL
+	KekKeyID     string `koanf:"p11-key-id"`     // active KEK key CKA_ID
 }
 
-// Declare the viper CLI flag values buffer
-var vprFlgsServe ViperFlagsServe
+// flagsServe holds the resolved serve command configuration.
+var flagsServe ServeFlags
+
+// cfgServe reports which serve settings the user actually provided; see cmdConfig.
+var cfgServe *cmdConfig
 
 // AlgorithmFamily is the user-facing algorithm selector. It names the cryptographic
 // mechanism only — key size and parameter set are derived from the HSM key at runtime.
@@ -100,9 +103,9 @@ const (
 	maxUnixSocketPathLen = 107
 )
 
-// sanitizeViperFlagsServe validates all user-controlled fields in ViperFlagsServe after
-// viper has resolved them from all input sources (CLI flags, config file, env vars).
-func sanitizeViperFlagsServe(f *ViperFlagsServe) error {
+// sanitizeServeFlags validates all user-controlled fields in ServeFlags after koanf has
+// resolved them from all input sources (CLI flags, env vars, config file, defaults).
+func sanitizeServeFlags(f *ServeFlags) error {
 	if err := validateAlgorithmFamily(f.AlgorithmFamily); err != nil {
 		return fmt.Errorf("--algorithm-family: %w", err)
 	}
@@ -165,22 +168,20 @@ Using AES-CBC with HMAC authentication, using CKA_ID, using CLI flags and servin
 		--algorithm-family aes-cbc
 `,
 	GroupID: "kmscmdsgrpmain",
-	// Initialize and populate cobra CLI flags values with viper during the Persistent pre-run
+	// Resolve the serve flags from all input sources during the persistent pre-run
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		if err := InitViperSubCmdE(viper.GetViper(), cmd, &vprFlgsServe); err != nil {
-			slog.Error("Error initializing Viper", "cobra_cmd", cmd.Use, "error", err)
+		var err error
+		if cfgServe, err = resolveCmdConfigE(cmd, &flagsServe); err != nil {
+			slog.Error("error resolving configuration", "cobra_cmd", cmd.Name(), "error", err)
 			return err
 		}
-		if err := sanitizeViperFlagsServe(&vprFlgsServe); err != nil {
-			return err
-		}
-		return nil
+		return sanitizeServeFlags(&flagsServe)
 	},
 	RunE: func(cmd *cobra.Command, _ []string) (err error) {
 		// Show the version of the k8s-kms-plugin and commit ID
 		version.LogVersion()
 
-		if vprFlgsServe.P11Pin, err = resolvePin(viper.GetViper(), "p11-pin", "Enter HSM PIN: "); err != nil {
+		if flagsServe.P11Pin, err = resolvePin(cfgServe, "p11-pin", "Enter HSM PIN: "); err != nil {
 			return
 		}
 
@@ -198,15 +199,15 @@ Using AES-CBC with HMAC authentication, using CKA_ID, using CLI flags and servin
 			logging.Fatal("failed to initialize provider", "cobra_cmd", cmd.Use, "error", err)
 		}
 
-		_ = os.Remove(vprFlgsServe.SocketPath)
+		_ = os.Remove(flagsServe.SocketPath)
 		var grpcUNIX net.Listener
-		if grpcUNIX, err = net.Listen("unix", vprFlgsServe.SocketPath); err != nil {
+		if grpcUNIX, err = net.Listen("unix", flagsServe.SocketPath); err != nil {
 			return
 		}
 		// Grant group read/write so a co-located client (e.g. kube-apiserver
 		// running under a shared gid) can connect to the socket.
-		if chmodErr := os.Chmod(vprFlgsServe.SocketPath, 0775); chmodErr != nil { //nolint:gosec // group access is intentional, see comment above
-			slog.Error("error setting socket permissions", "path", vprFlgsServe.SocketPath, "error", chmodErr)
+		if chmodErr := os.Chmod(flagsServe.SocketPath, 0775); chmodErr != nil { //nolint:gosec // group access is intentional, see comment above
+			slog.Error("error setting socket permissions", "path", flagsServe.SocketPath, "error", chmodErr)
 		}
 
 		if err = grpcServe(grpcUNIX, p); err != nil {
@@ -221,9 +222,8 @@ func init() {
 	// rootCmd is the parent command
 	rootCmd.AddCommand(serveCmd)
 
-	// Since this project uses Viper bind with Cobra flags, we generally do not need to use "Flags().*Var"
-	// (like StringVar, BoolVar, Uint16Var, etc...) as we do not need to access the cobra flag values directly. This is
-	// because we use Viper to retrieve the values of the flags.
+	// Flag values are read from the ServeFlags struct that koanf populates, so flags are registered
+	// without "Flags().*Var" (StringVar, BoolVar, Uint16Var, ...).
 
 	algFamilyDefault := AlgorithmFamilyAESGCM
 	serveCmd.PersistentFlags().Var(&algFamilyDefault, "algorithm-family", "Encryption mechanism. Possible values: aes-gcm, aes-cbc, rsa-oaep, ml-kem.")
@@ -233,8 +233,7 @@ func init() {
 		slog.Error("error registering flag completion function", "flag", "algorithm-family", "error", err)
 	}
 
-	// These flags comes from root
-	// These flags does not need to store their values in variable because we use the viper structure ViperFlagsServe to do this
+	// These flags do not store their values in a variable: they are read from ServeFlags.
 	serveCmd.PersistentFlags().Bool("auto-create", false, "Auto create the keys if needed.")
 	serveCmd.PersistentFlags().String("p11-key-label", "", "Key Label (CKA_LABEL) for the KMS KEK. The key must have a CKA_ID set on the HSM — it is stored as the KEK ID in Kubernetes etcd.")
 	serveCmd.PersistentFlags().String("p11-hmac-label", "", "Key Label (CKA_LABEL) for the HMAC key. The key must have a CKA_ID set on the HSM.")
@@ -266,25 +265,25 @@ func init() {
 }
 
 func initProvider() (p providers.Provider, err error) {
-	// Validated by sanitizeViperFlagsServe; cast directly to the provider sentinel.
-	alg := jose.Alg(vprFlgsServe.AlgorithmFamily)
+	// Validated by sanitizeServeFlags; cast directly to the provider sentinel.
+	alg := jose.Alg(flagsServe.AlgorithmFamily)
 
 	// init the provider config from user input
 	config := &crypto11.Config{}
-	switch vprFlgsServe.Provider {
+	switch flagsServe.Provider {
 	case "p11", "softhsm":
 		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case p11 or softhsm")
 		config = &crypto11.Config{
-			Path:            vprFlgsServe.P11Lib,
-			Pin:             vprFlgsServe.P11Pin,
+			Path:            flagsServe.P11Lib,
+			Pin:             flagsServe.P11Pin,
 			UseGCMIVFromHSM: false,
 		}
 
 	case "luna", "dpod":
 		slog.Log(context.Background(), logging.LevelTrace, "initProvider: case luna HSM or dpod")
 		config = &crypto11.Config{
-			Path:            vprFlgsServe.P11Lib,
-			Pin:             vprFlgsServe.P11Pin,
+			Path:            flagsServe.P11Lib,
+			Pin:             flagsServe.P11Pin,
 			UseGCMIVFromHSM: true,
 			GCMIVFromHSMControl: crypto11.GCMIVFromHSMConfig{
 				SupplyIvForHSMGCMEncrypt: false,
@@ -292,25 +291,25 @@ func initProvider() (p providers.Provider, err error) {
 			},
 		}
 	default:
-		slog.Error("unknown provider", "provider", vprFlgsServe.Provider)
+		slog.Error("unknown provider", "provider", flagsServe.Provider)
 		err = errors.New("unknown provider")
 		return
 	}
 
-	if vprFlgsServe.P11Label != "" {
-		config.TokenLabel = vprFlgsServe.P11Label
+	if flagsServe.P11Label != "" {
+		config.TokenLabel = flagsServe.P11Label
 	} else {
-		config.SlotNumber = &vprFlgsServe.P11Slot
+		config.SlotNumber = &flagsServe.P11Slot
 	}
 	// init the provider for active key only (no key rotation)
 	// TODO: See https://github.com/eclipse-keysealer/k8s-kms-plugin/issues/40#issuecomment-2593267852
 	if p, err = providers.NewP11(
 		config,
-		vprFlgsServe.CreateKey,
-		vprFlgsServe.KekKeyID,
-		vprFlgsServe.DekKeyLabel,
-		vprFlgsServe.HmacKeyLabel,
-		vprFlgsServe.HmacKeyID,
+		flagsServe.CreateKey,
+		flagsServe.KekKeyID,
+		flagsServe.DekKeyLabel,
+		flagsServe.HmacKeyLabel,
+		flagsServe.HmacKeyID,
 		alg,
 		false, // no key rotation
 		nil,

@@ -8,19 +8,18 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/spf13/viper"
 	"golang.org/x/term"
 )
 
 // resolvePinWithFns is the testable core of resolvePin. isTermFn and readPassFn
 // can be replaced in tests to avoid needing a real terminal.
 func resolvePinWithFns(
-	v *viper.Viper, key, prompt string,
+	cfg *cmdConfig, key, prompt string,
 	isTermFn func(int) bool,
 	readPassFn func(int) ([]byte, error),
 ) (string, error) {
-	if v.IsSet(key) {
-		return v.GetString(key), nil
+	if cfg.IsSet(key) {
+		return cfg.String(key), nil
 	}
 	fd := int(os.Stdin.Fd())
 	if !isTermFn(fd) {
@@ -36,12 +35,12 @@ func resolvePinWithFns(
 	return string(raw), nil
 }
 
-// resolvePin returns the PIN from viper when it was explicitly configured via
-// any source (CLI flag, env var, config file), including an empty string (valid
-// for no-PIN tokens and protected-authentication-path tokens).
+// resolvePin returns the PIN from the resolved command configuration when it was
+// explicitly configured via any source (CLI flag, env var, config file), including
+// an empty string (valid for no-PIN tokens and protected-authentication-path tokens).
 // When the key is absent from all sources it falls back to an interactive
 // terminal prompt so the PIN is never stored in shell history.
 // Returns an error when the key is absent and stdin is not a terminal.
-func resolvePin(v *viper.Viper, key, prompt string) (string, error) {
-	return resolvePinWithFns(v, key, prompt, term.IsTerminal, term.ReadPassword)
+func resolvePin(cfg *cmdConfig, key, prompt string) (string, error) {
+	return resolvePinWithFns(cfg, key, prompt, term.IsTerminal, term.ReadPassword)
 }

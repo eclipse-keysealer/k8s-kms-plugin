@@ -10,32 +10,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSanitizeViperFlagsRotation_Valid(t *testing.T) {
-	f := &ViperFlagsRotation{OldAlgorithmFamily: "aes-gcm"}
-	assert.NoError(t, sanitizeViperFlagsRotation(f))
+func TestSanitizeRotationFlags_Valid(t *testing.T) {
+	f := &RotationFlags{OldAlgorithmFamily: "aes-gcm"}
+	assert.NoError(t, sanitizeRotationFlags(f))
 }
 
-func TestSanitizeViperFlagsRotation_InvalidAlgorithm(t *testing.T) {
-	f := &ViperFlagsRotation{OldAlgorithmFamily: "unknown"}
-	err := sanitizeViperFlagsRotation(f)
+func TestSanitizeRotationFlags_InvalidAlgorithm(t *testing.T) {
+	f := &RotationFlags{OldAlgorithmFamily: "unknown"}
+	err := sanitizeRotationFlags(f)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "--old-algorithm-family")
 }
 
-// TestSanitizeViperFlagsRotation_LabelLimits verifies that oversized old-KEK labels
+// TestSanitizeRotationFlags_LabelLimits verifies that oversized old-KEK labels
 // are rejected with flag-prefixed error messages.
-func TestSanitizeViperFlagsRotation_LabelLimits(t *testing.T) {
+func TestSanitizeRotationFlags_LabelLimits(t *testing.T) {
 	atLimit := strings.Repeat("a", maxCkaLabelBytes)
 	overLimit := strings.Repeat("a", maxCkaLabelBytes+1)
 
 	cases := []struct {
 		name    string
-		flags   ViperFlagsRotation
+		flags   RotationFlags
 		wantErr string
 	}{
 		{
 			"labels at limit",
-			ViperFlagsRotation{
+			RotationFlags{
 				OldAlgorithmFamily: "aes-gcm",
 				OldP11Label:        atLimit,
 				OldDekKeyLabel:     atLimit,
@@ -45,23 +45,23 @@ func TestSanitizeViperFlagsRotation_LabelLimits(t *testing.T) {
 		},
 		{
 			"old-p11-label over limit",
-			ViperFlagsRotation{OldAlgorithmFamily: "aes-gcm", OldP11Label: overLimit},
+			RotationFlags{OldAlgorithmFamily: "aes-gcm", OldP11Label: overLimit},
 			"--old-p11-label",
 		},
 		{
 			"old-p11-key-label over limit",
-			ViperFlagsRotation{OldAlgorithmFamily: "aes-gcm", OldDekKeyLabel: overLimit},
+			RotationFlags{OldAlgorithmFamily: "aes-gcm", OldDekKeyLabel: overLimit},
 			"--old-p11-key-label",
 		},
 		{
 			"old-p11-hmac-label over limit",
-			ViperFlagsRotation{OldAlgorithmFamily: "aes-gcm", OldHmacKeyLabel: overLimit},
+			RotationFlags{OldAlgorithmFamily: "aes-gcm", OldHmacKeyLabel: overLimit},
 			"--old-p11-hmac-label",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := sanitizeViperFlagsRotation(&tc.flags)
+			err := sanitizeRotationFlags(&tc.flags)
 			if tc.wantErr == "" {
 				assert.NoError(t, err)
 			} else {

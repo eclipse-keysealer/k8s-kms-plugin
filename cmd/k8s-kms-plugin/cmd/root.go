@@ -13,31 +13,26 @@ import (
 
 	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/eclipse-keysealer/k8s-kms-plugin/pkg/logging"
 )
 
-// cobra root CLI flags. They are mostly not used because we use viper that binds the cobra flags
-// to the corresponding environment variables that viper reads.
-// TODO: verfiy if we can get rid of this
-var (
-	cfgFile   string
-	debug     bool
-	logFormat string
-	logLevel  string
-)
+// cfgFile is the only cobra flag variable the code reads directly: the configuration file has
+// to be known before koanf can resolve anything else. Every other flag value is read from the
+// per-command structs below, which koanf populates from all four input sources.
+var cfgFile string
 
-// ViperFlagsRoot defines a struct to hold the values of cobra CLI flags and use viper to populate them
-type ViperFlagsRoot struct {
-	ConfigFile string `mapstructure:"config"`
-	Debug      bool   `mapstructure:"debug"`
-	LogFormat  string `mapstructure:"log-format"`
-	LogLevel   string `mapstructure:"log-level"`
+// RootFlags holds the resolved values of the root command flags. The koanf tags are the long
+// flag names, which are also the keys of the k8s-kms-plugin section of the config file.
+type RootFlags struct {
+	ConfigFile string `koanf:"config"`
+	Debug      bool   `koanf:"debug"`
+	LogFormat  string `koanf:"log-format"`
+	LogLevel   string `koanf:"log-level"`
 }
 
-// Declare the viper CLI flag values buffer
-var vprFlgsRoot ViperFlagsRoot
+// flagsRoot holds the resolved root command configuration.
+var flagsRoot RootFlags
 
 // activeLogLevel is the runtime-adjustable log level shared by all slog handlers.
 var activeLogLevel = new(slog.LevelVar)
@@ -81,9 +76,9 @@ func init() {
 	// Add groups to the root command
 	rootCmd.AddGroup(kmsCmdsGrpMain)
 
-	// Since this project uses Viper bind with Cobra flags, we generally do not need to use "Flags().*Var"
-	// (like StringVar, BoolVar, Uint16Var, etc...) as we do not need to access the cobra flag values directly. This is
-	// because we use Viper to retrieve the values of the flags.
+	// Flag values are read from the RootFlags struct that koanf populates, so flags are registered
+	// without "Flags().*Var" (StringVar, BoolVar, Uint16Var, ...) unless the value is needed before
+	// koanf runs, which is only the case for --config.
 
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
@@ -91,14 +86,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "k8s-kms-plugin.config.yaml", "ConfigFile. Env var: K8S_KMS_PLUGIN_CONFIG_FILE")
 
 	// logging level
-	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Set log level to \"debug\". This is equivalent to using --log-level=debug. Flags --log-level and --debug flag are mutually exclusive. Env var: K8S_KMS_PLUGIN_DEBUG.")
-	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Set log level. Possible values: trace, debug, info, warn, error, quiet. Flags --log-level and --debug flag are mutually exclusive. Env var: K8S_KMS_PLUGIN_LOG_LEVEL.")
+	rootCmd.PersistentFlags().Bool("debug", false, "Set log level to \"debug\". This is equivalent to using --log-level=debug. Flags --log-level and --debug flag are mutually exclusive. Env var: K8S_KMS_PLUGIN_DEBUG.")
+	rootCmd.PersistentFlags().String("log-level", "info", "Set log level. Possible values: trace, debug, info, warn, error, quiet. Flags --log-level and --debug flag are mutually exclusive. Env var: K8S_KMS_PLUGIN_LOG_LEVEL.")
 	if err := rootCmd.RegisterFlagCompletionFunc("log-level", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"trace", "debug", "info", "warn", "error", "quiet"}, cobra.ShellCompDirectiveNoFileComp
 	}); err != nil {
 		slog.Error("error registering flag completion function", "flag", "log-level", "error", err)
 	}
-	rootCmd.PersistentFlags().StringVar(&logFormat, "log-format", "text", "Log output format. Possible values: text, json. Env var: K8S_KMS_PLUGIN_LOG_FORMAT")
+	rootCmd.PersistentFlags().String("log-format", "text", "Log output format. Possible values: text, json. Env var: K8S_KMS_PLUGIN_LOG_FORMAT")
 	if err := rootCmd.RegisterFlagCompletionFunc("log-format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{"text", "json"}, cobra.ShellCompDirectiveNoFileComp
 	}); err != nil {
@@ -107,23 +102,27 @@ func init() {
 	rootCmd.MarkFlagsMutuallyExclusive("log-level", "debug") // --log-level and --debug flag are mutually exclusive since debug is an alias for log-level=debug
 }
 
-// initConfig reads in config file and ENV variables if set and populate CLI flags buffer thanks to viper
+// initConfig loads the configuration file and resolves the root command flags from it, from the
+// environment and from the command line. It runs through cobra.OnInitialize, before the
+// PersistentPreRunE of the command being executed, so the config file is parsed once and every
+// subcommand resolves its own section from it.
 func initConfig() {
-	// Parse config file with viper
-	if err := ReadViperConfigE(viper.GetViper(), rootCmd); err != nil {
-		slog.Error("error reading viper config", "error", err)
+	// Parse the configuration file, if there is one
+	if err := loadConfigFileE(rootCmd); err != nil {
+		slog.Error("error reading config file", "error", err)
 	}
 
-	// Initialize and populate cobra CLI root flags values with viper
-	if err := InitViperSubCmdE(viper.GetViper(), rootCmd, &vprFlgsRoot); err != nil {
-		slog.Error("error initializing viper", "cobra_cmd", rootCmd.Use, "error", err)
+	// Resolve the root command flags: CLI flags > env vars > config file > defaults
+	if _, err := resolveCmdConfigE(rootCmd, &flagsRoot); err != nil {
+		slog.Error("error resolving configuration", "cobra_cmd", rootCmd.Name(), "error", err)
 	}
 
-	// Determine log level
-	if rootCmd.Flags().Lookup("debug").Changed {
+	// Determine log level. --debug is an alias for --log-level=debug, and cobra rejects the two
+	// being set together, so the resolved value alone decides.
+	if flagsRoot.Debug {
 		activeLogLevel.Set(slog.LevelDebug)
 	} else {
-		level, err := logging.ParseLevel(vprFlgsRoot.LogLevel)
+		level, err := logging.ParseLevel(flagsRoot.LogLevel)
 		if err != nil {
 			slog.Error("unknown log level", "error", err)
 		}
@@ -142,7 +141,7 @@ func initConfig() {
 		ReplaceAttr: logging.ReplaceAttr,
 	}
 	var handler slog.Handler
-	switch vprFlgsRoot.LogFormat {
+	switch flagsRoot.LogFormat {
 	case "json":
 		handler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 			Level:       activeLogLevel,
@@ -153,10 +152,10 @@ func initConfig() {
 		handler = tint.NewTextHandler(os.Stderr, opts)
 	default:
 		handler = tint.NewTextHandler(os.Stderr, opts)
-		slog.Error("unknown log format", "format", vprFlgsRoot.LogFormat)
+		slog.Error("unknown log format", "format", flagsRoot.LogFormat)
 	}
 	slog.SetDefault(slog.New(handler))
 
-	slog.Debug("log format configured", "log_format", vprFlgsRoot.LogFormat)
-	slog.Debug("log level configured", "log_level", vprFlgsRoot.LogLevel)
+	slog.Debug("log format configured", "log_format", flagsRoot.LogFormat)
+	slog.Debug("log level configured", "log_level", flagsRoot.LogLevel)
 }

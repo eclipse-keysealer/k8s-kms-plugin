@@ -89,69 +89,69 @@ func TestValidateAlgorithmFamily(t *testing.T) {
 	}
 }
 
-// TestSanitizeViperFlagsServe_Valid confirms that a valid AlgorithmFamily passes
+// TestSanitizeServeFlags_Valid confirms that a valid AlgorithmFamily passes
 // without error.
-func TestSanitizeViperFlagsServe_Valid(t *testing.T) {
+func TestSanitizeServeFlags_Valid(t *testing.T) {
 	for _, v := range []string{"aes-gcm", "aes-cbc", "rsa-oaep", "ml-kem"} {
-		f := &ViperFlagsServe{AlgorithmFamily: v}
-		assert.NoErrorf(t, sanitizeViperFlagsServe(f), "sanitize should accept %q", v)
+		f := &ServeFlags{AlgorithmFamily: v}
+		assert.NoErrorf(t, sanitizeServeFlags(f), "sanitize should accept %q", v)
 	}
 }
 
-// TestSanitizeViperFlagsServe_Invalid verifies that an unsupported value (e.g. from
+// TestSanitizeServeFlags_Invalid verifies that an unsupported value (e.g. from
 // a config file) is rejected with a flag-prefixed error message.
-func TestSanitizeViperFlagsServe_Invalid(t *testing.T) {
-	f := &ViperFlagsServe{AlgorithmFamily: "aes-256-gcm"}
-	err := sanitizeViperFlagsServe(f)
+func TestSanitizeServeFlags_Invalid(t *testing.T) {
+	f := &ServeFlags{AlgorithmFamily: "aes-256-gcm"}
+	err := sanitizeServeFlags(f)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "--algorithm-family")
 	assert.Contains(t, err.Error(), "must be one of")
 }
 
-// TestSanitizeViperFlagsServe_Empty verifies that an empty string (e.g. missing
+// TestSanitizeServeFlags_Empty verifies that an empty string (e.g. missing
 // config key) is rejected.
-func TestSanitizeViperFlagsServe_Empty(t *testing.T) {
-	f := &ViperFlagsServe{AlgorithmFamily: ""}
-	err := sanitizeViperFlagsServe(f)
+func TestSanitizeServeFlags_Empty(t *testing.T) {
+	f := &ServeFlags{AlgorithmFamily: ""}
+	err := sanitizeServeFlags(f)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "--algorithm-family")
 }
 
-// TestSanitizeViperFlagsServe_LabelLimits verifies that CKA_LABEL strings over the
+// TestSanitizeServeFlags_LabelLimits verifies that CKA_LABEL strings over the
 // PKCS#11 255-byte maximum are rejected with flag-prefixed error messages.
-func TestSanitizeViperFlagsServe_LabelLimits(t *testing.T) {
+func TestSanitizeServeFlags_LabelLimits(t *testing.T) {
 	atLimit := strings.Repeat("a", maxCkaLabelBytes)
 	overLimit := strings.Repeat("a", maxCkaLabelBytes+1)
 
 	cases := []struct {
 		name    string
-		flags   ViperFlagsServe
+		flags   ServeFlags
 		wantErr string
 	}{
 		{
 			"all labels at limit",
-			ViperFlagsServe{AlgorithmFamily: "aes-gcm", P11Label: atLimit, DekKeyLabel: atLimit, HmacKeyLabel: atLimit},
+			ServeFlags{AlgorithmFamily: "aes-gcm", P11Label: atLimit, DekKeyLabel: atLimit, HmacKeyLabel: atLimit},
 			"",
 		},
 		{
 			"p11-label over limit",
-			ViperFlagsServe{AlgorithmFamily: "aes-gcm", P11Label: overLimit},
+			ServeFlags{AlgorithmFamily: "aes-gcm", P11Label: overLimit},
 			"--p11-label",
 		},
 		{
 			"p11-key-label over limit",
-			ViperFlagsServe{AlgorithmFamily: "aes-gcm", DekKeyLabel: overLimit},
+			ServeFlags{AlgorithmFamily: "aes-gcm", DekKeyLabel: overLimit},
 			"--p11-key-label",
 		},
 		{
 			"p11-hmac-label over limit",
-			ViperFlagsServe{AlgorithmFamily: "aes-gcm", HmacKeyLabel: overLimit},
+			ServeFlags{AlgorithmFamily: "aes-gcm", HmacKeyLabel: overLimit},
 			"--p11-hmac-label",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := sanitizeViperFlagsServe(&tc.flags)
+			err := sanitizeServeFlags(&tc.flags)
 			if tc.wantErr == "" {
 				assert.NoError(t, err)
 			} else {
@@ -162,31 +162,31 @@ func TestSanitizeViperFlagsServe_LabelLimits(t *testing.T) {
 	}
 }
 
-// TestSanitizeViperFlagsServe_SocketPathLimit verifies that Unix socket paths over
+// TestSanitizeServeFlags_SocketPathLimit verifies that Unix socket paths over
 // 107 bytes are rejected.
-func TestSanitizeViperFlagsServe_SocketPathLimit(t *testing.T) {
+func TestSanitizeServeFlags_SocketPathLimit(t *testing.T) {
 	atLimit := strings.Repeat("a", maxUnixSocketPathLen)
 	overLimit := strings.Repeat("a", maxUnixSocketPathLen+1)
 
 	cases := []struct {
 		name    string
-		flags   ViperFlagsServe
+		flags   ServeFlags
 		wantErr string
 	}{
 		{
 			"at limit",
-			ViperFlagsServe{AlgorithmFamily: "aes-gcm", SocketPath: atLimit},
+			ServeFlags{AlgorithmFamily: "aes-gcm", SocketPath: atLimit},
 			"",
 		},
 		{
 			"over limit",
-			ViperFlagsServe{AlgorithmFamily: "aes-gcm", SocketPath: overLimit},
+			ServeFlags{AlgorithmFamily: "aes-gcm", SocketPath: overLimit},
 			"--socket",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := sanitizeViperFlagsServe(&tc.flags)
+			err := sanitizeServeFlags(&tc.flags)
 			if tc.wantErr == "" {
 				assert.NoError(t, err)
 			} else {
