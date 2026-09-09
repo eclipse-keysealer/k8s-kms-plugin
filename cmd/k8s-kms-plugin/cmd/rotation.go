@@ -32,13 +32,11 @@ import (
 type RotationFlags struct {
 	// PKCS #11 & KMS plugin parameters
 	OldAlgorithmFamily string `koanf:"old-algorithm-family"`
-	OldNativePath      string `koanf:"old-native-path"`
 	OldP11Label        string `koanf:"old-p11-label"`
 	OldP11Lib          string `koanf:"old-p11-lib"`
 	OldP11Pin          string `koanf:"old-p11-pin"`
 	OldP11Slot         int    `koanf:"old-p11-slot"`
 	OldProvider        string `koanf:"old-provider"`
-	OldSocketPath      string `koanf:"old-socket"` // Unix socket path for old KEK HSM
 
 	// CKA_ID and CKA_LABEL
 	OldDekKeyLabel  string `koanf:"old-p11-key-label"`
@@ -56,42 +54,46 @@ var cfgRotation *cmdConfig
 // rotationCmd represents the keyRotation command
 var rotationCmd = &cobra.Command{
 	Use:   "rotation",
-	Short: "KEK Key rotation for KMS v2",
-	Long: `Handles Kubernetes KMS v2 requests and support KEK key rotation with x1 old KEK key and x1 active KEK key.
-"k8s-kms-pluginc serve rotation" is very similar to the "k8s-kms-plugin serve" command, but adds key rotation support.
-Refer to the kubernetes KMS v2 documentation for more details about key rotation.
-https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#developing-a-kms-plugin-gRPC-server-notes-kms-v2
+	Short: "Serve KMS v2 and also decrypt data written under a previous KEK",
+	Long: `Serve the Kubernetes KMS v2 API exactly as "k8s-kms-plugin serve" does, and additionally
+decrypt data that was written under one previous KEK.
 
-KMS v2 API: https://pkg.go.dev/k8s.io/kms@v0.34.1/apis/v2
+Every DecryptRequest is routed by the key_id Kubernetes stored with the data: the active KEK
+decrypts its own data, the old KEK decrypts everything older. Encryption always uses the active
+KEK, so this command does not re-encrypt anything by itself — kube-apiserver rewrites the
+objects, and once it has rewritten them all the old KEK can be dropped.
 
-How --old-p11-key-id / --old-p11-key-label (and --old-p11-hmac-id / --old-p11-hmac-label) are resolved:
-docs/cli-user-interface/cka-id-vs-cka-label.md
+The old KEK is described by a second, complete set of --old-* flags, so it may live on another
+token or another HSM than the active one. The active KEK keeps the flags of the parent "serve"
+command, including --socket: this command listens on that one socket.
+
+Reference:
+
+- Kubernetes KMS rotation notes: https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#developing-a-kms-plugin-gRPC-server-notes-kms-v2
+- KMS v2 API: https://pkg.go.dev/k8s.io/kms/apis/v2
+- CKA_ID vs CKA_LABEL: https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/docs/cli-user-interface/cka-id-vs-cka-label.md
 `,
 	Example: `
-Using flags and serving on unix socket (gRPC plaintext):
-	k8s-kms-plugin \
-	  serve \
-		--log-level=trace \
-		--socket /run/user/1000/k8s-kms-plugin.sock \
-		--p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
-		--p11-label mylabel \
-		--p11-pin mypin \
-		--p11-key-label rsa0 \
-		--algorithm-family rsa-oaep \
-		  rotation \
-			--old-p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
-			--old-p11-label mylabel \
-			--old-p11-pin mypin \
-			--old-p11-key-id 64636138353931326363356537313264 \
-			--old-p11-hmac-id 30663536623936326235663530363234 \
-			--old-algorithm-family aes-cbc
+  # Active KEK on the command line, old KEK after the "rotation" subcommand.
+  # Both PINs are prompted for, in that order, unless they come from the environment.
+  k8s-kms-plugin serve \
+    --socket /run/user/1000/k8s-kms-plugin.sock \
+    --p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
+    --p11-label mytoken \
+    --p11-key-label rsa0 \
+    --algorithm-family rsa-oaep \
+    rotation \
+      --old-p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
+      --old-p11-label mytoken \
+      --old-p11-key-id 64636138353931326363356537313264 \
+      --old-p11-hmac-id 30663536623936326235663530363234 \
+      --old-algorithm-family aes-cbc
 
-Using environment variables and configuration file:
-	K8S_KMS_PLUGIN_SERVE_P11_PIN="mypin" k8s-kms-plugin serve rotation --config my-kms-plugin-config.yaml
-
-Using both CLI Flags, environment variables and configuration file and serving on unix socket:
-	K8S_KMS_PLUGIN_SERVE_P11_PIN="mypin" k8s-kms-plugin --log-format=json serve rotation --config my-kms-plugin-config.yaml
-	`,
+  # Both KEKs from a configuration file, both PINs from the environment.
+  export K8S_KMS_PLUGIN_SERVE_P11_PIN=mypin
+  export K8S_KMS_PLUGIN_SERVE_ROTATION_OLD_P11_PIN=myoldpin
+  k8s-kms-plugin --config my-kms-plugin-config.yaml serve rotation
+`,
 	// Resolve the rotation flags from all input sources during the persistent pre-run
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Manually call parent's PersistentPreRunE
@@ -109,6 +111,8 @@ Using both CLI Flags, environment variables and configuration file and serving o
 		return sanitizeRotationFlags(&flagsRotation)
 	},
 	RunE: func(cmd *cobra.Command, _ []string) (err error) {
+		silenceUsage(cmd)
+
 		// Show the version of the k8s-kms-plugin and commit ID
 		version.LogVersion()
 
@@ -157,28 +161,51 @@ Using both CLI Flags, environment variables and configuration file and serving o
 func init() {
 	serveCmd.AddCommand(rotationCmd)
 
+	// The old KEK is described by a complete second set of flags, so it can live on a different
+	// token — or a different HSM — than the active one. Their usage text mirrors the serve flags
+	// they shadow; see "k8s-kms-plugin serve --help" for the shared rules.
+
+	// The token holding the old KEK
+	rotationCmd.Flags().String("old-provider", "p11",
+		"PKCS #11 driver quirks to apply to the old KEK's token. One of: p11, softhsm, luna, dpod.")
+	registerFixedCompletion(rotationCmd, "old-provider", "p11", "softhsm", "luna", "dpod")
+
+	rotationCmd.Flags().String("old-p11-lib", "",
+		"Path to the PKCS #11 library of the old KEK's TPM or HSM.")
+	markFlagFilename(rotationCmd, "old-p11-lib", "so", "dylib", "dll")
+
+	rotationCmd.Flags().String("old-p11-label", "",
+		"Token label of the old KEK's token. Takes precedence over --old-p11-slot.")
+	rotationCmd.Flags().Int("old-p11-slot", 0,
+		"Slot number of the old KEK's token. Only used when --old-p11-label is empty.")
+	rotationCmd.Flags().String("old-p11-pin", "",
+		"PIN of the old KEK's token. If omitted, prompted interactively with hidden input; pass an "+
+			"empty string explicitly for a token that takes no PIN.")
+
+	// The old KEK itself
 	oldAlgFamilyDefault := AlgorithmFamilyAESGCM
-	rotationCmd.Flags().Var(&oldAlgFamilyDefault, "old-algorithm-family", "Encryption mechanism of the old KEK. Possible values: aes-gcm, aes-cbc, rsa-oaep, ml-kem.")
-	if err := rotationCmd.RegisterFlagCompletionFunc("old-algorithm-family", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"aes-gcm", "aes-cbc", "rsa-oaep", "ml-kem"}, cobra.ShellCompDirectiveNoFileComp
-	}); err != nil {
-		slog.Error("error registering flag completion function", "flag", "old-algorithm-family", "error", err)
-	}
+	rotationCmd.Flags().Var(&oldAlgFamilyDefault, "old-algorithm-family",
+		"Mechanism the old KEK was used with. One of: aes-gcm, aes-cbc, rsa-oaep, ml-kem. Required: "+
+			"data written under it cannot be read back with the wrong mechanism.")
+	registerFixedCompletion(rotationCmd, "old-algorithm-family", "aes-gcm", "aes-cbc", "rsa-oaep", "ml-kem")
 	if err := rotationCmd.MarkFlagRequired("old-algorithm-family"); err != nil {
 		slog.Error("error marking flag required", "flag", "old-algorithm-family", "error", err)
 	}
-	rotationCmd.Flags().String("old-native-path", "", "Native path for old KEK")
-	rotationCmd.Flags().String("old-p11-label", "", "P11 token label for old KEK")
-	rotationCmd.Flags().String("old-p11-lib", "", "Path to P11 library/client for old KEK")
-	rotationCmd.Flags().String("old-p11-pin", "", "HSM PIN for old KEK. If omitted, prompted interactively (input hidden). Pass an empty string explicitly to use a no-PIN token.")
 
-	rotationCmd.Flags().Int("old-p11-slot", 0, "P11 token slot for old KEK")
-	rotationCmd.Flags().String("old-provider", "p11", "Provider for old KEK")
-	rotationCmd.Flags().String("old-socket", "", "Unix socket path for old KEK")
-	rotationCmd.Flags().String("old-p11-key-label", "", "Key Label (CKA_LABEL) for the old KEK. The key must have a CKA_ID set on the HSM.")
-	rotationCmd.Flags().String("old-p11-hmac-id", "", "Key ID CKA_ID for old KEK HMAC")
-	rotationCmd.Flags().String("old-p11-hmac-label", "", "Key Label (CKA_LABEL) for the old KEK HMAC. The key must have a CKA_ID set on the HSM.")
-	rotationCmd.Flags().String("old-p11-key-id", "", "Key ID CKA_ID for old KEK")
+	rotationCmd.Flags().String("old-p11-key-id", "",
+		"CKA_ID of the old KEK, as a hex string. Mutually exclusive with --old-p11-key-label; "+
+			"exactly one of the two is required.")
+	rotationCmd.Flags().String("old-p11-key-label", "",
+		"CKA_LABEL of the old KEK. Mutually exclusive with --old-p11-key-id; exactly one of the two "+
+			"is required. The key must also carry a CKA_ID on the token.")
+	rotationCmd.Flags().String("old-p11-hmac-id", "",
+		"CKA_ID of the old HMAC key, as a hex string. aes-cbc only. Mutually exclusive with "+
+			"--old-p11-hmac-label.")
+	rotationCmd.Flags().String("old-p11-hmac-label", "",
+		"CKA_LABEL of the old HMAC key. aes-cbc only. Mutually exclusive with --old-p11-hmac-id.")
+	registerNoFileCompletion(rotationCmd,
+		"old-p11-label", "old-p11-slot", "old-p11-pin",
+		"old-p11-key-id", "old-p11-key-label", "old-p11-hmac-id", "old-p11-hmac-label")
 
 	// At least one of the old KEK CKA_ID or old CKA_LABEL must be provided by the user
 	rotationCmd.MarkFlagsOneRequired("old-p11-key-id", "old-p11-key-label")

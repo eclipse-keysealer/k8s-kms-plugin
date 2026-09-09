@@ -36,7 +36,6 @@ import (
 type ServeFlags struct {
 	// PKCS #11 & KMS plugin parameters
 	AlgorithmFamily string `koanf:"algorithm-family"`
-	NativePath      string `koanf:"native-path"`
 	P11Label        string `koanf:"p11-label"`
 	P11Lib          string `koanf:"p11-lib"`
 	P11Pin          string `koanf:"p11-pin"`
@@ -127,45 +126,53 @@ func sanitizeServeFlags(f *ServeFlags) error {
 // serveCmd represents the serve command
 var serveCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Handles Kubernetes KMS v2 requests",
-	Long: `Handles Kubernetes KMS v2 requests but do not support key rotation.
-Use "k8s-kms-plugin serve rotation" subcommand to support key rotation.
-Kubernetes KMS documentation: https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#configuring-the-kms-provider-kms-v2
+	Short: "Serve the Kubernetes KMS v2 API over a unix socket",
+	Long: `Serve the Kubernetes KMS v2 API on a unix socket, wrapping and unwrapping the data
+encryption key with a key encryption key (KEK) held on a PKCS #11 token.
 
-KMS v2 API: https://pkg.go.dev/k8s.io/kms@v0.34.1/apis/v2
+This command serves one active KEK. To keep decrypting data written under a previous KEK while
+a rotation is in progress, use "k8s-kms-plugin serve rotation" instead.
 
-How --p11-key-id / --p11-key-label (and --p11-hmac-id / --p11-hmac-label) are resolved:
-docs/cli-user-interface/cka-id-vs-cka-label.md
+Identify the KEK with exactly one of --p11-key-id (CKA_ID) or --p11-key-label (CKA_LABEL); the
+plugin looks up whichever you leave out. --p11-hmac-id / --p11-hmac-label follow the same rule
+and are only used by --algorithm-family=aes-cbc, which authenticates the ciphertext separately.
+
+The PIN is a secret: prefer K8S_KMS_PLUGIN_SERVE_P11_PIN, or omit it and be prompted, over
+--p11-pin, which any user on the host can read out of the process arguments.
+
+Reference:
+
+- Kubernetes KMS provider guide: https://kubernetes.io/docs/tasks/administer-cluster/kms-provider/#configuring-the-kms-provider-kms-v2
+- KMS v2 API: https://pkg.go.dev/k8s.io/kms/apis/v2
+- CKA_ID vs CKA_LABEL: https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/docs/cli-user-interface/cka-id-vs-cka-label.md
 `,
 	Example: `
-Using flags and serving on unix socket (gRPC plaintext):
-	k8s-kms-plugin
-	  serve \
-		--log-level=info \
-		--socket /run/user/1000/k8s-kms-plugin.sock \
-		--p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
-		--p11-label mylabel \
-		--p11-pin mypin \
-		--p11-key-label rsa0 \
-		--algorithm-family rsa-oaep
+  # Everything on the command line, PIN prompted interactively (input hidden).
+  k8s-kms-plugin serve \
+    --socket /run/user/1000/k8s-kms-plugin.sock \
+    --p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
+    --p11-label mytoken \
+    --p11-key-label rsa0 \
+    --algorithm-family rsa-oaep
 
-Using both environment variables and configuration file and serving on unix socket:
-	K8S_KMS_PLUGIN_SERVE_P11_PIN="mypin" k8s-kms-plugin serve --config my-kms-plugin-config.yaml
+  # AES-CBC with HMAC authentication, both keys identified by CKA_ID.
+  k8s-kms-plugin serve \
+    --log-level trace \
+    --socket /run/user/1000/k8s-kms-plugin.sock \
+    --p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
+    --p11-label mytoken \
+    --p11-key-id 64636138353931326363356537313264 \
+    --p11-hmac-id 30663536623936326235663530363234 \
+    --algorithm-family aes-cbc
 
-Using both CLI Flags, environment variables and configuration file and serving on unix socket:
-	K8S_KMS_PLUGIN_SERVE_P11_PIN="mypin" k8s-kms-plugin --log-format=json serve --config my-kms-plugin-config.yaml
+  # Everything from a configuration file, PIN from the environment.
+  export K8S_KMS_PLUGIN_SERVE_P11_PIN=mypin
+  k8s-kms-plugin --config my-kms-plugin-config.yaml serve
 
-Using AES-CBC with HMAC authentication, using CKA_ID, using CLI flags and serving on unix socket:
-	k8s-kms-plugin
-	  serve \
-		--log-level=trace  \
-		--socket /run/user/1000/k8s-kms-plugin.sock \
-		--p11-lib /usr/lib/x86_64-linux-gnu/libtpm2_pkcs11.so.1 \
-		--p11-label mylabel \
-		--p11-pin mypin \
-		--p11-key-id 64636138353931326363356537313264 \
-		--p11-hmac-id 30663536623936326235663530363234 \
-		--algorithm-family aes-cbc
+  # Config file for the token, environment for the PIN, flags for what changes per host.
+  export K8S_KMS_PLUGIN_SERVE_P11_PIN=mypin
+  k8s-kms-plugin --log-format json --config my-kms-plugin-config.yaml serve \
+    --socket /run/user/1000/k8s-kms-plugin.sock
 `,
 	GroupID: "kmscmdsgrpmain",
 	// Resolve the serve flags from all input sources during the persistent pre-run
@@ -178,6 +185,8 @@ Using AES-CBC with HMAC authentication, using CKA_ID, using CLI flags and servin
 		return sanitizeServeFlags(&flagsServe)
 	},
 	RunE: func(cmd *cobra.Command, _ []string) (err error) {
+		silenceUsage(cmd)
+
 		// Show the version of the k8s-kms-plugin and commit ID
 		version.LogVersion()
 
@@ -225,35 +234,56 @@ func init() {
 	// Flag values are read from the ServeFlags struct that koanf populates, so flags are registered
 	// without "Flags().*Var" (StringVar, BoolVar, Uint16Var, ...).
 
+	// The token to open
+	serveCmd.PersistentFlags().String("provider", "p11",
+		"PKCS #11 driver quirks to apply. One of: p11 (generic), softhsm, luna, dpod. "+
+			"luna and dpod take the GCM IV from the HSM.")
+	registerFixedCompletion(serveCmd, "provider", "p11", "softhsm", "luna", "dpod")
+
+	serveCmd.PersistentFlags().String("p11-lib", "",
+		"Path to the PKCS #11 library of the TPM or HSM, e.g. /usr/lib/softhsm/libsofthsm2.so.")
+	markFlagFilename(serveCmd, "p11-lib", "so", "dylib", "dll")
+
+	serveCmd.PersistentFlags().String("p11-label", "",
+		"Token label (CKA_LABEL of the token, not of the key) identifying which token to open. "+
+			"Takes precedence over --p11-slot.")
+	serveCmd.PersistentFlags().Int("p11-slot", 0,
+		"Slot number to open. Only used when --p11-label is empty.")
+	serveCmd.PersistentFlags().String("p11-pin", "",
+		"PIN of the token. Omit it to be prompted with hidden input; pass an empty string for a "+
+			"token that takes no PIN. Prefer the environment variable: process arguments are "+
+			"world-readable.")
+
+	// The KEK, and the HMAC key that aes-cbc needs alongside it
 	algFamilyDefault := AlgorithmFamilyAESGCM
-	serveCmd.PersistentFlags().Var(&algFamilyDefault, "algorithm-family", "Encryption mechanism. Possible values: aes-gcm, aes-cbc, rsa-oaep, ml-kem.")
-	if err := serveCmd.RegisterFlagCompletionFunc("algorithm-family", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"aes-gcm", "aes-cbc", "rsa-oaep", "ml-kem"}, cobra.ShellCompDirectiveNoFileComp
-	}); err != nil {
-		slog.Error("error registering flag completion function", "flag", "algorithm-family", "error", err)
-	}
+	serveCmd.PersistentFlags().Var(&algFamilyDefault, "algorithm-family",
+		"Mechanism the KEK is used with. One of: aes-gcm, aes-cbc, rsa-oaep, ml-kem. Key size and "+
+			"ML-KEM parameter set are read from the key on the token, not configured here.")
+	registerFixedCompletion(serveCmd, "algorithm-family", "aes-gcm", "aes-cbc", "rsa-oaep", "ml-kem")
 
-	// These flags do not store their values in a variable: they are read from ServeFlags.
-	serveCmd.PersistentFlags().Bool("auto-create", false, "Auto create the keys if needed.")
-	serveCmd.PersistentFlags().String("p11-key-label", "", "Key Label (CKA_LABEL) for the KMS KEK. The key must have a CKA_ID set on the HSM — it is stored as the KEK ID in Kubernetes etcd.")
-	serveCmd.PersistentFlags().String("p11-hmac-label", "", "Key Label (CKA_LABEL) for the HMAC key. The key must have a CKA_ID set on the HSM.")
-	serveCmd.PersistentFlags().String("p11-key-id", "", "Key ID CKA_ID for KMS KEK.")
-	serveCmd.PersistentFlags().String("p11-hmac-id", "", "Key ID CKA_ID for KMS HMAC.")
-	serveCmd.PersistentFlags().StringP("native-path", "p", ".keys", "Path to key store for native provider(Files only).")
-	serveCmd.PersistentFlags().String("p11-label", "", "P11 token label.")
-	serveCmd.PersistentFlags().String("p11-lib", "", "Path to p11 library/client.")
-	serveCmd.PersistentFlags().String("p11-pin", "", "HSM PIN. If omitted, prompted interactively (input hidden). Pass an empty string explicitly to use a no-PIN token.")
-	serveCmd.PersistentFlags().Int("p11-slot", 0, "P11 token slot.")
-	// Provider
-	serveCmd.PersistentFlags().String("provider", "p11", "Provider. Possible values: p11, softhsm, luna, dpod.")
-	if err := serveCmd.RegisterFlagCompletionFunc("provider", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{"p11", "softhsm", "luna", "dpod"}, cobra.ShellCompDirectiveNoFileComp
-	}); err != nil {
-		slog.Error("error registering flag completion function", "flag", "provider", "error", err)
-	}
+	serveCmd.PersistentFlags().String("p11-key-id", "",
+		"CKA_ID of the KEK, hex. Mutually exclusive with --p11-key-label, one of the two required. "+
+			"This is the ID Kubernetes stores in etcd alongside the data.")
+	serveCmd.PersistentFlags().String("p11-key-label", "",
+		"CKA_LABEL of the KEK. Mutually exclusive with --p11-key-id, one of the two required. The "+
+			"key must also carry a CKA_ID on the token: that is what is stored in etcd.")
+	serveCmd.PersistentFlags().String("p11-hmac-id", "",
+		"CKA_ID of the HMAC key authenticating the ciphertext, hex. aes-cbc only. Mutually "+
+			"exclusive with --p11-hmac-label.")
+	serveCmd.PersistentFlags().String("p11-hmac-label", "",
+		"CKA_LABEL of the HMAC key authenticating the ciphertext. aes-cbc only. Mutually exclusive "+
+			"with --p11-hmac-id. The key must also carry a CKA_ID on the token.")
+	registerNoFileCompletion(serveCmd,
+		"p11-label", "p11-slot", "p11-pin", "p11-key-id", "p11-key-label", "p11-hmac-id", "p11-hmac-label")
 
-	// Socket
-	serveCmd.PersistentFlags().String("socket", filepath.Join(os.TempDir(), "run", "hsm-plugin-server.sock"), "Unix Socket. Example: /run/user/$(id -u $USER)/k8s-kms-plugin.sock.")
+	serveCmd.PersistentFlags().Bool("auto-create", false,
+		"Generate the KEK on the token when it is missing, instead of failing. Not supported for "+
+			"ml-kem: that key pair has to be provisioned on the HSM beforehand.")
+
+	// Where to listen. A unix socket is the only transport: KMS v2 supports nothing else.
+	serveCmd.PersistentFlags().String("socket", filepath.Join(os.TempDir(), "run", "hsm-plugin-server.sock"),
+		"Unix socket the gRPC server listens on, e.g. /run/user/$(id -u)/k8s-kms-plugin.sock. "+
+			"Created with mode 0775 so a client under a shared gid can connect.")
 
 	// At least one of KEK CKA_ID or CKA_LABEL must be provided by the user
 	serveCmd.MarkFlagsOneRequired("p11-key-id", "p11-key-label")

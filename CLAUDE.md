@@ -326,6 +326,34 @@ paths call the same `validateAlgorithmFamily`.
 the HMAC pair. `NewP11` resolves whichever was omitted by looking up the other on the token. See
 `docs/cli-user-interface/cka-id-vs-cka-label.md`.
 
+### Help output
+
+`help_theme.go` owns the terminal help: an ANSI theme plus a copy of cobra's usage template. Two rules keep it
+from leaking:
+
+- **Style the rendered text, never the stored strings.** `Short`, `Long`, `Example` and flag usage are read
+  verbatim by shell completion, by `docs` (which bypasses the usage template entirely) and by the generated
+  flag table, so an escape code stored in one of them would reach all three. `TestFlagsBlock_StylingPreservesLayout`
+  is the guard: stripping the escapes must reproduce pflag's output byte for byte.
+- **Style after padding.** `rpad` and `FlagUsages` compute their columns from plain text, so colour goes on
+  last, where zero-width escapes cannot shift a column.
+
+`colorEnabled` honours `NO_COLOR` (presence, not value), `CLICOLOR_FORCE` and a non-terminal stdout;
+`helpWidth` wraps flag usage to the terminal, capped at 110 columns, falling back to `COLUMNS`. The template
+deliberately puts the subcommand list *before* the examples so `serve rotation` is visible on the first screen
+of `serve --help`, and ends with one footer line about env vars and config keys — which is why individual
+usage strings must not grow `Env var: …` suffixes back.
+
+`completion.go` classifies every flag for the shell: `registerFixedCompletion` for closed value sets,
+`registerNoFileCompletion` for opaque values (PINs, labels, hex IDs), `markFlagFilename` / `markFlagDirname`
+for paths. Without a classification cobra offers file names, which is wrong for most flags here. The mark
+helpers pick between the local and persistent flag set themselves — `Command.Flags()` holds only local flags at
+registration time, so marking a persistent flag through it fails with "no such flag".
+
+`silenceUsage(cmd)` at the top of a `RunE` stops cobra from answering a *runtime* failure with the whole usage
+screen; everything cobra validates before `RunE` (flag parsing, required flags, flag groups) still prints it.
+`rootCmd` sets `SilenceErrors` so `Execute` prints the error exactly once, on stderr.
+
 Config file discovery does **not** include `/etc`: it is `--config`, then `K8S_KMS_PLUGIN_CONFIG`, then
 `k8s-kms-plugin.conf.yaml` in `$HOME` or `$HOME/.config/k8s-kms-plugin/`. The packaged example therefore has to
 be passed explicitly.

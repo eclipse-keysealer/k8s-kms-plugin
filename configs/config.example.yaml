@@ -61,8 +61,6 @@ k8s-kms-plugin:
     ## auto-create: generate the KEK on the token if it is missing. Not supported for
     ## ml-kem — that key pair has to be provisioned on the HSM beforehand.
     #auto-create: false
-    ## native-path: key store directory for the file-based provider. Development only.
-    #native-path: ".keys"
 
     ## --------------------------------------------------------- serve rotation --------
     ## Read by `k8s-kms-plugin serve rotation`, which serves the KEK above for both
@@ -82,7 +80,6 @@ k8s-kms-plugin:
       #old-p11-key-id: "7c7ce2d85d63" # mutually exclusive with old-p11-key-label
       #old-p11-hmac-label: "old-hmac-key-for-cbc" # aes-cbc only
       #old-p11-hmac-id: "a72d4a0059ac" # mutually exclusive with old-p11-hmac-label
-      #old-native-path: ".keys" # file-based provider only
 
   # -------------------------------------------------------------------- version -------
   version:
