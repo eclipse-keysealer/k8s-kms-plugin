@@ -43,7 +43,6 @@ type ServeFlags struct {
 	SocketPath      string `koanf:"socket"` // Unix socket path
 
 	// PKCS #11 CKA_ID and CKA_LABEL of active KEK key
-	CreateKey    bool   `koanf:"auto-create"`
 	DekKeyLabel  string `koanf:"p11-key-label"`  // active DEK key CKA_LABEL
 	HmacKeyID    string `koanf:"p11-hmac-id"`    // active HMAC key CKA_ID
 	HmacKeyLabel string `koanf:"p11-hmac-label"` // active HMAC key CKA_LABEL
@@ -275,10 +274,6 @@ func init() {
 	registerNoFileCompletion(serveCmd,
 		"p11-label", "p11-slot", "p11-pin", "p11-key-id", "p11-key-label", "p11-hmac-id", "p11-hmac-label")
 
-	serveCmd.PersistentFlags().Bool("auto-create", false,
-		"Generate the KEK on the token when it is missing, instead of failing. Not supported for "+
-			"ml-kem: that key pair has to be provisioned on the HSM beforehand.")
-
 	// Where to listen. A unix socket is the only transport: KMS v2 supports nothing else.
 	serveCmd.PersistentFlags().String("socket", filepath.Join(os.TempDir(), "run", "hsm-plugin-server.sock"),
 		"Unix socket the gRPC server listens on, e.g. /run/user/$(id -u)/k8s-kms-plugin.sock. "+
@@ -348,7 +343,6 @@ func initProvider() (p providers.Provider, err error) {
 	// TODO: See https://github.com/eclipse-keysealer/k8s-kms-plugin/issues/40#issuecomment-2593267852
 	if p, err = providers.NewP11(
 		config,
-		flagsServe.CreateKey,
 		flagsServe.KekKeyID,
 		flagsServe.DekKeyLabel,
 		flagsServe.HmacKeyLabel,

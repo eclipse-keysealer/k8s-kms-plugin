@@ -259,7 +259,6 @@ func initRotatedProvider() (pRot providers.Provider, err error) {
 	// TODO: See https://github.com/eclipse-keysealer/k8s-kms-plugin/issues/40#issuecomment-2593267852
 	if pRot, err = providers.NewP11(
 		activeConfig,
-		flagsServe.CreateKey,
 		flagsServe.KekKeyID,
 		flagsServe.DekKeyLabel,
 		flagsServe.HmacKeyLabel,

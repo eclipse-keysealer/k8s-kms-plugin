@@ -44,7 +44,7 @@ func testFlagSet() *pflag.FlagSet {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	fs.String("p11-lib", "", "Path to the PKCS #11 library of the TPM or HSM.")
 	fs.StringP("output", "o", "yaml", "Machine-readable output format.")
-	fs.Bool("auto-create", false, "Generate the KEK on the token when it is missing.")
+	fs.Bool("verbose", false, "A boolean flag, which pflag renders without a type.")
 	return fs
 }
 

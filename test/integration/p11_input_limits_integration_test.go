@@ -85,7 +85,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_ID", flag: "--p11-key-id", wantErr: wantHexErr,
 			build: func(_ *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					overMaxHexID(), "", "", "", providers.AlgAESGCM,
 					false, nil, "", "", "", "", "")
 			},
@@ -93,7 +93,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_LABEL", flag: "--p11-key-label", wantErr: wantLabelErr,
 			build: func(_ *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", overMaxLabel(), "", "", providers.AlgAESGCM,
 					false, nil, "", "", "", "", "")
 			},
@@ -101,7 +101,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_ID", flag: "--p11-hmac-id", wantErr: wantHexErr,
 			build: func(t *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", newRealKEK(t), "", overMaxHexID(), providers.AlgAESCBC,
 					false, nil, "", "", "", "", "")
 			},
@@ -109,7 +109,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_LABEL", flag: "--p11-hmac-label", wantErr: wantLabelErr,
 			build: func(t *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", newRealKEK(t), overMaxLabel(), "", providers.AlgAESCBC,
 					false, nil, "", "", "", "", "")
 			},
@@ -117,7 +117,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_ID", flag: "--old-p11-key-id", wantErr: wantHexErr,
 			build: func(t *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", newRealKEK(t), "", "", providers.AlgAESGCM,
 					true, testConfig, overMaxHexID(), "", "", "", providers.AlgAESGCM)
 			},
@@ -125,7 +125,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_LABEL", flag: "--old-p11-key-label", wantErr: wantLabelErr,
 			build: func(t *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", newRealKEK(t), "", "", providers.AlgAESGCM,
 					true, testConfig, "", overMaxLabel(), "", "", providers.AlgAESGCM)
 			},
@@ -133,7 +133,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_ID", flag: "--old-p11-hmac-id", wantErr: wantHexErr,
 			build: func(t *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", newRealKEK(t), "", "", providers.AlgAESGCM,
 					true, testConfig, "", newRealKEK(t), "", overMaxHexID(), providers.AlgAESCBC)
 			},
@@ -141,7 +141,7 @@ func TestNewP11_RejectsOverMaxKeyIdentifiers(t *testing.T) {
 		{
 			name: "over-max CKA_LABEL", flag: "--old-p11-hmac-label", wantErr: wantLabelErr,
 			build: func(t *testing.T) (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", newRealKEK(t), "", "", providers.AlgAESGCM,
 					true, testConfig, "", newRealKEK(t), overMaxLabel(), "", providers.AlgAESCBC)
 			},
@@ -177,7 +177,7 @@ func TestNewP11_AcceptsMaxSizedKeyIdentifiers(t *testing.T) {
 		{
 			flag: "--p11-key-id",
 			build: func() (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					atMaxHexID(), "", "", "", providers.AlgAESGCM,
 					false, nil, "", "", "", "", "")
 			},
@@ -185,7 +185,7 @@ func TestNewP11_AcceptsMaxSizedKeyIdentifiers(t *testing.T) {
 		{
 			flag: "--p11-key-label",
 			build: func() (*providers.P11, error) {
-				return providers.NewP11(testConfig, false,
+				return providers.NewP11(testConfig,
 					"", atMaxLabel(), "", "", providers.AlgAESGCM,
 					false, nil, "", "", "", "", "")
 			},

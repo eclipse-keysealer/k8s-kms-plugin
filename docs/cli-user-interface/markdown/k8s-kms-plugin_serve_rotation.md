@@ -80,7 +80,6 @@ k8s-kms-plugin serve rotation [flags]
 
 ```
       --algorithm-family algorithmFamily   Mechanism the KEK is used with. One of: aes-gcm, aes-cbc, rsa-oaep, ml-kem. Key size and ML-KEM parameter set are read from the key on the token, not configured here. (default aes-gcm)
-      --auto-create                        Generate the KEK on the token when it is missing, instead of failing. Not supported for ml-kem: that key pair has to be provisioned on the HSM beforehand.
       --config string                      Path to a YAML, TOML or JSON configuration file. Without it, k8s-kms-plugin.conf.{yaml,yml,json,toml} is looked up in $HOME and $HOME/.config/k8s-kms-plugin/; /etc is never searched.
       --debug                              Shorthand for --log-level=debug. Mutually exclusive with --log-level.
       --log-format string                  Log output format. One of: text (coloured, for a terminal), json (for a log collector). Logs always go to stderr. (default "text")

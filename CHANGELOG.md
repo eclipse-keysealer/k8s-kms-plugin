@@ -30,6 +30,25 @@ history see [GitHub Releases](https://github.com/eclipse-keysealer/k8s-kms-plugi
 
 ### Removed
 
+- **`--auto-create` is gone.** The flag promised to generate the KEK on the token when it was
+  missing, and could not: two independent things stopped it. `NewP11` resolves the KEK through
+  `GetKeyIDAndLabel` (p11.go:204) *before* reaching the `if p.createKey` block (p11.go:289), and
+  that resolution fails hard when the key is absent — which is the only situation auto-create
+  exists for. Even reached directly, the block tested `foundDefaultDek == nil` after
+  `crypto11.Context.FindKey`, which in crypto11 v2 returns an error rather than a nil key when
+  nothing matches, so the branch was unreachable a second time over. The flag dates from the
+  repository's first commit (September 2020), where it was shared with a `bootstrap` command
+  ("Bootstrap/regenerate EST PKI") that went away with the Istio/EST code, and where the block
+  still ran directly after `crypto11.Configure`; the KMS v2 rewrite inserted the KEK lookup in
+  front of it and left it stranded. `providers.NewP11` loses its `createKey` parameter with it.
+
+  Should key provisioning come back, it needs a design rather than this flag: the old code
+  always generated a 256-bit AES secret key regardless of `--algorithm-family` (so it could not
+  serve `rsa-oaep` or `ml-kem`), labelled it with a random UUID as `CKA_ID` instead of the
+  requested `--p11-key-id`, and never created the separate HMAC key that `aes-cbc` needs. It
+  would also have to cover `serve rotation`, where the key being created is the *new active*
+  KEK while the old one keeps decrypting — which is precisely the moment a fresh key is wanted.
+
 - **`--native-path` / `-p`, `--old-native-path` and `--old-socket` are gone.** All three were
   parsed and then ignored: `--native-path` has been in the CLI since the repository's first
   commit (September 2020) describing a "native provider (Files only)" that was never written —

@@ -461,7 +461,7 @@ func TestP11_NewP11_AllEmptyArgs(t *testing.T) {
 	emptyActiveCfg := &crypto11.Config{}
 	emptyOldCfg := &crypto11.Config{}
 
-	_, err := NewP11(emptyActiveCfg, false, "", "", "", "", "", false, emptyOldCfg, "", "", "", "", "")
+	_, err := NewP11(emptyActiveCfg, "", "", "", "", "", false, emptyOldCfg, "", "", "", "", "")
 	assert.Error(t, err)
 }
 
@@ -731,7 +731,7 @@ func TestP11_NewP11_ConfigEmptyArgs(t *testing.T) {
 		Pin:        "5678",
 	}
 
-	_, err := NewP11(validActiveCfg, false, "", "", "", "", "", false, validOldCfg, "", "", "", "", "")
+	_, err := NewP11(validActiveCfg, "", "", "", "", "", false, validOldCfg, "", "", "", "", "")
 	assert.Error(t, err)
 }
 

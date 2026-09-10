@@ -58,9 +58,6 @@ k8s-kms-plugin:
     ## one of the two, same rule as the KEK.
     #p11-hmac-label: "my-hmac-key-for-cbc"
     #p11-hmac-id: "49c6b305210f"
-    ## auto-create: generate the KEK on the token if it is missing. Not supported for
-    ## ml-kem — that key pair has to be provisioned on the HSM beforehand.
-    #auto-create: false
 
     ## --------------------------------------------------------- serve rotation --------
     ## Read by `k8s-kms-plugin serve rotation`, which serves the KEK above for both

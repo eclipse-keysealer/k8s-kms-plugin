@@ -32,7 +32,7 @@ func newTestServeCmd() (root, serve *cobra.Command) {
 	serve.PersistentFlags().String("p11-key-label", "", "")
 	serve.PersistentFlags().String("socket", "/tmp/default.sock", "")
 	serve.PersistentFlags().Int("p11-slot", 0, "")
-	serve.PersistentFlags().Bool("auto-create", false, "")
+	serve.PersistentFlags().Bool("debug-token", false, "")
 	serve.MarkFlagsOneRequired("p11-key-id", "p11-key-label")
 	serve.MarkFlagsMutuallyExclusive("p11-key-id", "p11-key-label")
 
@@ -146,18 +146,24 @@ func TestResolveCmdConfig_TypedValues(t *testing.T) {
 k8s-kms-plugin:
   serve:
     p11-slot: 3
-    auto-create: true
+    debug-token: true
     algorithm-family: "rsa-oaep"
 `)
 	_, serve := newTestServeCmd()
 	require.NoError(t, serve.ParseFlags(nil))
 
-	var flags ServeFlags
+	// A local target rather than ServeFlags: the point is that every scalar kind decodes, and
+	// ServeFlags has no bool field of its own since --auto-create was removed.
+	var flags struct {
+		P11Slot         int    `koanf:"p11-slot"`
+		DebugToken      bool   `koanf:"debug-token"`
+		AlgorithmFamily string `koanf:"algorithm-family"`
+	}
 	_, err := resolveCmdConfigE(serve, &flags)
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, flags.P11Slot)
-	assert.True(t, flags.CreateKey)
+	assert.True(t, flags.DebugToken)
 	assert.Equal(t, "rsa-oaep", flags.AlgorithmFamily)
 }
 
@@ -166,17 +172,21 @@ k8s-kms-plugin:
 func TestResolveCmdConfig_EnvVarTypeCoercion(t *testing.T) {
 	useConfig(t, "")
 	t.Setenv("K8S_KMS_PLUGIN_SERVE_P11_SLOT", "7")
-	t.Setenv("K8S_KMS_PLUGIN_SERVE_AUTO_CREATE", "true")
+	t.Setenv("K8S_KMS_PLUGIN_SERVE_DEBUG_TOKEN", "true")
 
 	_, serve := newTestServeCmd()
 	require.NoError(t, serve.ParseFlags(nil))
 
-	var flags ServeFlags
+	// An env var is always a string on the way in, so this is where the weak typing matters.
+	var flags struct {
+		P11Slot    int  `koanf:"p11-slot"`
+		DebugToken bool `koanf:"debug-token"`
+	}
 	_, err := resolveCmdConfigE(serve, &flags)
 	require.NoError(t, err)
 
 	assert.Equal(t, 7, flags.P11Slot)
-	assert.True(t, flags.CreateKey)
+	assert.True(t, flags.DebugToken)
 }
 
 // TestResolveCmdConfig_IgnoresForeignEnvVars checks that only the environment variables naming a

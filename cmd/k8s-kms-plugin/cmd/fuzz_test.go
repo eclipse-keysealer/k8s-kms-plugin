@@ -94,7 +94,7 @@ func FuzzResolveCmdConfig(f *testing.F) {
 		serve.Flags().String("p11-key-id", "", "")
 		serve.Flags().String("socket", "/tmp/k8s-kms-plugin.sock", "")
 		serve.Flags().Int("p11-slot", 0, "")
-		serve.Flags().Bool("auto-create", false, "")
+		serve.Flags().Bool("debug-token", false, "")
 
 		var target ServeFlags
 		// An error is a valid outcome for a malformed config; a panic is not.

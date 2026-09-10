@@ -72,7 +72,6 @@ k8s-kms-plugin serve [flags]
 
 ```
       --algorithm-family algorithmFamily   Mechanism the KEK is used with. One of: aes-gcm, aes-cbc, rsa-oaep, ml-kem. Key size and ML-KEM parameter set are read from the key on the token, not configured here. (default aes-gcm)
-      --auto-create                        Generate the KEK on the token when it is missing, instead of failing. Not supported for ml-kem: that key pair has to be provisioned on the HSM beforehand.
   -h, --help                               help for serve
       --p11-hmac-id string                 CKA_ID of the HMAC key authenticating the ciphertext, hex. aes-cbc only. Mutually exclusive with --p11-hmac-label.
       --p11-hmac-label string              CKA_LABEL of the HMAC key authenticating the ciphertext. aes-cbc only. Mutually exclusive with --p11-hmac-id. The key must also carry a CKA_ID on the token.
