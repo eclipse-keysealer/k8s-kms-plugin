@@ -149,7 +149,7 @@ func TestConfig_CLIFlags(t *testing.T) {
 
 // TestConfig_EnvVars verifies that every serve parameter is correctly read
 // from K8S_KMS_PLUGIN_SERVE_* environment variables.  The subprocess receives
-// no P11 CLI arguments; the viper→cobra sync in InitViperSubCmdE is what makes
+// no P11 CLI arguments; the config→cobra flag sync in resolveCmdConfigE is what makes
 // MarkFlagsOneRequired("p11-key-id", "p11-key-label") accept the env-var value.
 func TestConfig_EnvVars(t *testing.T) {
 	label := newLabel(t)
@@ -233,7 +233,7 @@ func TestConfig_Hybrid_EnvPin(t *testing.T) {
 	kmsRoundtrip(t, sock)
 }
 
-// TestConfig_Hybrid_AllSources exercises the viper priority chain by combining
+// TestConfig_Hybrid_AllSources exercises the koanf priority chain by combining
 // all three input methods at once:
 //
 //   - Config file  — supplies p11-lib, p11-label, algorithm-family (lowest priority)

@@ -17,7 +17,7 @@ You should read `SoftHSMv2` official documentation before reading this guide.
   - [Create an AES Key in SoftHSMv2](#create-an-aes-key-in-softhsmv2)
   - [Start the `k8s-kms-plugin serve`](#start-the-k8s-kms-plugin-serve)
   - [Configure a kubernetes cluster](#configure-a-kubernetes-cluster)
-- [Using Env Vars Thanks to Viper](#using-env-vars-thanks-to-viper)
+- [Using Env Vars](#using-env-vars)
 
 
 ## Install `SoftHSMv2`
@@ -170,10 +170,10 @@ curl -sfL https://get.k3s.io | K3S_DEBUG=true INSTALL_K3S_VERSION=v1.33.1+k3s1 s
 
 `KinD` needs the socket mounted into the node container instead — see its guide.
 
-## Using Env Vars Thanks to Viper
+## Using Env Vars
 
 > [!NOTE]
-> TODO: improve this section and harmonise the previous section to use viper's env vars
+> TODO: improve this section and harmonise the previous section to use environment variables
 
 Have a look at this [table](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/docs/cli-user-interface/txt/cli-env-var-table.txt) which explains how to use environment variables with the `k8s-kms-plugin`.
 

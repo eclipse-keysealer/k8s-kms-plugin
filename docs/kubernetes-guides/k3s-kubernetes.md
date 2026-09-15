@@ -129,7 +129,7 @@ and an **old KEK key** (the key being rotated and replaced).
 
 While in rotation mode, the `k8s-kms-plugin` will support [`DecryptRequest`](https://pkg.go.dev/k8s.io/kms/apis/v2#DecryptRequest)
 for both the active and old KEK keys. But `k8s-kms-plugin` will only support
-[`StatusRequest`](https://pkg.go.dev/k8s.io/kms/apis/v2#StatusRequest`) and [`EncryptRequest`](https://pkg.go.dev/k8s.io/kms/apis/v2#EncryptRequest)
+[`StatusRequest`](https://pkg.go.dev/k8s.io/kms/apis/v2#StatusRequest) and [`EncryptRequest`](https://pkg.go.dev/k8s.io/kms/apis/v2#EncryptRequest)
 for the active KEK key. This prevent new kubernetes content from being encrypted with the old KEK key while allwoing
 to decrypt the older kubernetes content which will be re-encrypted with the new active KEK key.
 

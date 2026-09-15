@@ -474,10 +474,8 @@ You can also test a full Status, Encryption and Decryption roundtrip using the s
   <summary>Verbose output from k8s-kms-plugin</summary>
   ```
   DEBU[0000] logrus log-level is set to: trace             line="cmd/root.go:160"
-  TRAC[0000] cobra command path: k8s-kms-plugin serve      cobra-cmd=serve line="cmd/viper-patch-sub.go:104"
-  TRAC[0000] section path: k8s-kms-plugin.serve            cobra-cmd=serve line="cmd/viper-patch-sub.go:110"
-  TRAC[0000] new viper env prefix: K8S_KMS_PLUGIN_SERVE    cobra-cmd=serve line="cmd/viper-patch-sub.go:115"
-  TRAC[0000] UnmarshalSubMerged: no config file loaded     line="cmd/viper-patch-sub.go:63"
+  TRAC[0000] no config file found; continue with env vars, flags and defaults  line="cmd/config.go:264"
+  TRAC[0000] resolving command configuration               cobra_cmd=serve section_path=k8s-kms-plugin.serve env_prefix=K8S_KMS_PLUGIN_SERVE_ line="cmd/config.go:148"
   INFO[0000] k8s-kms-plugin version: v0.6.0-alpha-14-g0bb7a2d  line="version/version.go:167"
   DEBU[0000] k8s-kms-plugin version details                build-date="2025-07-31T15:02:26+00:00" build-platform=x86_64 commit=0bb7a2d4e777da331b8a15fb2764cbd616c78b0f go-version="go version go1.23.9 linux/amd64" is-git-dirty=true line="version/version.go:176" raw-git-describe=v0.6.0-alpha-14-g0bb7a2d short-commit=0bb7a2d4
   DEBU[0000] initProvider: case p11 or softhsm             line="cmd/serve.go:272"

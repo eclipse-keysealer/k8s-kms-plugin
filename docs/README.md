@@ -7,7 +7,7 @@ the main [`README.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/
 
 > [!NOTE]
 > **Rendering**: these pages are rendered both by GitHub and by the documentation site
-> ([Hugo + Hextra](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/website)), which publishes `docs/` and nothing else. Three link
+> ([Hugo + Hextra](https://github.com/eclipse-keysealer/k8s-kms-plugin/tree/master/website)), which publishes `docs/` and nothing else. Four link
 > conventions keep them working in both places:
 >
 > - **between documentation pages** — always **relative** to the `.md` file (`./installation.md`).
@@ -19,6 +19,10 @@ the main [`README.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/
 >   A page becomes a *directory* URL on the site, so a relative link to a plain file beside it
 >   resolves one level too deep. Images are the exception: keep those relative, since Hugo's image
 >   render hook resolves them.
+> - **to a Go package on pkg.go.dev** — never pin a module version. `https://pkg.go.dev/k8s.io/kms/apis/v2`
+>   follows the module; inserting an `@<version>` freezes the link at whatever release was current the
+>   day it was written, and nothing updates it on a dependency bump. `make check-doc-links` fails on a
+>   pinned URL, in Markdown and in Go doc comments alike.
 >
 > Headings carry **no manual section numbers**: a generator derives ordering and the table of contents from the
 > document tree, and hand-written numbers drift out of sync with the anchors pointing at them. Run

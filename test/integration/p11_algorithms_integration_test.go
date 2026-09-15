@@ -73,7 +73,6 @@ func newP11WithLabel(t *testing.T, label string, alg jose.Alg) *providers.P11 {
 	t.Helper()
 	p, err := providers.NewP11(
 		testConfig,
-		false, // createKey
 		"",    // kekkeyid (CKA_ID) — discover from label
 		label, // k8sKekLabel (CKA_LABEL)
 		"",    // hmacKeyLabel
@@ -91,7 +90,6 @@ func newP11CBCWithLabel(t *testing.T, kekLabel, hmacLabel string) *providers.P11
 	t.Helper()
 	p, err := providers.NewP11(
 		testConfig,
-		false,
 		"",        // kekkeyid
 		kekLabel,  // k8sKekLabel
 		hmacLabel, // hmacKeyLabel
@@ -373,7 +371,7 @@ func TestAESGCM_KeyRotation(t *testing.T) {
 
 	// Encrypt with the old key using a standalone provider.
 	oldP, err := providers.NewP11(
-		testConfig, false,
+		testConfig,
 		"", oldLabel, "", "",
 		providers.AlgAESGCM,
 		false, nil, "", "", "", "", "",
@@ -387,7 +385,7 @@ func TestAESGCM_KeyRotation(t *testing.T) {
 
 	// Decrypt using a rotation provider: new key is active, old key is for decryption only.
 	rotP, err := providers.NewP11(
-		testConfig, false,
+		testConfig,
 		"", newLabel, "", "",
 		providers.AlgAESGCM,
 		true,         // isKeyRotation

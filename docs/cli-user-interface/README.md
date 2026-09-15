@@ -77,6 +77,26 @@ A recap of all `k8s-kms-plugin` subcommands, flags, and environment variables is
 | 3️⃣ Config File          | Overrides default               | `log-level: warn` in YAML/TOML/JSON |
 | 4️⃣ Default Value        | Used if nothing else is set     | `info` (from Cobra init)            |
 
-Flags are handled by [Cobra](https://github.com/spf13/cobra), environment variables, and config files are handled by
-[Viper](https://github.com/spf13/viper) with some customizations [`viper-patch-sub.go`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/cmd/k8s-kms-plugin/cmd/viper-patch-sub.go)
-to patch the binding between Cobra and Viper.
+Flags are handled by [Cobra](https://github.com/spf13/cobra); environment variables and config files are handled by
+[koanf](https://github.com/knadh/koanf), which
+[`config.go`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/cmd/k8s-kms-plugin/cmd/config.go)
+layers into the priority chain above, one koanf instance per command.
+
+Both the environment variable and the config file key of a flag derive from the command path it is declared on, so
+the subcommand hierarchy is mirrored in both spellings:
+
+| Flag                                     | Environment variable                        | Config file key                                |
+|------------------------------------------|---------------------------------------------|------------------------------------------------|
+| `k8s-kms-plugin --log-level`             | `K8S_KMS_PLUGIN_LOG_LEVEL`                  | `k8s-kms-plugin.log-level`                     |
+| `k8s-kms-plugin serve --p11-pin`         | `K8S_KMS_PLUGIN_SERVE_P11_PIN`              | `k8s-kms-plugin.serve.p11-pin`                 |
+| `k8s-kms-plugin serve rotation --old-p11-pin` | `K8S_KMS_PLUGIN_SERVE_ROTATION_OLD_P11_PIN` | `k8s-kms-plugin.serve.rotation.old-p11-pin` |
+
+A flag belongs to exactly one command, so it has exactly one environment variable and one config file key: the
+ones of the command it is declared on. `--log-level` is a root flag, so it is read from
+`K8S_KMS_PLUGIN_LOG_LEVEL` and from `k8s-kms-plugin.log-level`, never from the `serve` section.
+
+One cobra limitation is worked around in `config.go`: `MarkFlagsOneRequired` and
+`MarkFlagsMutuallyExclusive` decide from whether a flag was typed on the command line, so a value that arrives
+through an environment variable or the config file is written back into the cobra flag set. Without it,
+`--p11-key-label` supplied through `K8S_KMS_PLUGIN_SERVE_P11_KEY_LABEL` would leave
+`MarkFlagsOneRequired("p11-key-id", "p11-key-label")` unsatisfied.
