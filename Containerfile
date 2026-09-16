@@ -59,7 +59,7 @@ ARG BINARY=dist/k8s-kms-plugin
 # Versions. Keep GOLANG_VERSION in sync with go.mod and .go-version.
 # Only used by the opt-in "source" build.
 #------------------------------------------------------------------------------
-ARG GOLANG_VERSION=1.26.5
+ARG GOLANG_VERSION=1.27.1
 
 # Debian 13 "Trixie"
 ARG DEBIAN_VERSION=trixie

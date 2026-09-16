@@ -279,7 +279,7 @@ use `go version -m` to identify a binary:
 
 ```bash
 $ go version -m $(go env GOPATH)/bin/k8s-kms-plugin | head -3
-/home/user/go/bin/k8s-kms-plugin: go1.26.5
+/home/user/go/bin/k8s-kms-plugin: go1.27.1
         path    github.com/eclipse-keysealer/k8s-kms-plugin/cmd/k8s-kms-plugin
         mod     github.com/eclipse-keysealer/k8s-kms-plugin      v1.0.0-rc3
 ```
@@ -298,7 +298,7 @@ If you need `k8s-kms-plugin version` to report the real version, build with `mak
 
 You should have `make`, `git` and `go` installed. Review the content of the [`Makefile`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/Makefile) file for more details.
 
-The required Go version is the one declared in [`go.mod`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/go.mod) (currently **Go 1.26**). The CI workflows resolve it
+The required Go version is the one declared in [`go.mod`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/go.mod) (currently **Go 1.27**). The CI workflows resolve it
 with `go-version-file: go.mod`, so `go.mod` is the single source of truth — do not rely on the versions pinned in this
 document.
 
@@ -312,7 +312,7 @@ The build was tested with the following tool versions:
 
 | Tool | Version tested                    | Check with       |
 |------|-----------------------------------|------------------|
-| Go   | `go1.26.5 linux/amd64`            | `go version`     |
+| Go   | `go1.27.1 linux/amd64`            | `go version`     |
 | Make | `GNU Make 4.4.1`                  | `make --version` |
 | Git  | `git version 2.55.0`              | `git version`    |
 | GCC  | native `gcc` (for `CGO_ENABLED=1`) | `gcc --version`  |
