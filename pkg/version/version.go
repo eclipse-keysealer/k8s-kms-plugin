@@ -110,9 +110,11 @@ func NewVersionData() (Data, error) {
 	}
 
 	// set major, minor and patch to values that have been parsed by go_version
-	versionData.Major = uint64(versionSegments[0])
-	versionData.Minor = uint64(versionSegments[1])
-	versionData.Patch = uint64(versionSegments[2])
+	// #nosec G115 -- semver segments are non-negative small ints, so the int->uint64
+	// conversion cannot overflow (see .golangci.yml for the repo-wide G115 stance).
+	versionData.Major = uint64(versionSegments[0]) // #nosec G115
+	versionData.Minor = uint64(versionSegments[1]) // #nosec G115
+	versionData.Patch = uint64(versionSegments[2]) // #nosec G115
 
 	return versionData, nil
 }

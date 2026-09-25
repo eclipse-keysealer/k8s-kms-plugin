@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Thales Group and the k8s-kms-plugin Contributors
 # SPDX-License-Identifier: MIT
 
-.PHONY: all lint lint-fix vet govulncheck glossary glossary-check check-doc-links check-site site site-serve site-clean build build-linux-amd64 build-linux-amd64-debug build-linux-arm64 build-linux-arm64-debug build-linux-riscv64 build-linux-riscv64-debug coverage test test-integration test-e2e fuzz doc notices image image-from-source release release-local-test get-ldflags check-version clean
+.PHONY: all lint lint-fix vet gosec govulncheck glossary glossary-check check-doc-links check-site site site-serve site-clean build build-linux-amd64 build-linux-amd64-debug build-linux-arm64 build-linux-arm64-debug build-linux-riscv64 build-linux-riscv64-debug coverage test test-integration test-e2e fuzz doc notices image image-from-source release release-local-test get-ldflags check-version clean
 
 all: build-linux-amd64 build-linux-arm64 build-linux-riscv64
 
@@ -130,6 +130,19 @@ GOVULNCHECK ?= govulncheck
 govulncheck:
 		$(call require,$(GOVULNCHECK),go install golang.org/x/vuln/cmd/govulncheck@latest)
 		CGO_ENABLED=$(CGO_ENABLED) $(GOVULNCHECK) -show verbose ./...
+
+## Security scan
+# Runs gosec (https://github.com/securego/gosec) — a static-analysis security
+# scanner for Go code. Complements govulncheck (dependency CVEs) by flagging
+# insecure code patterns in this module itself.
+#
+# Install gosec:
+#   go install github.com/securego/gosec/v2/cmd/gosec@latest
+GOSEC ?= gosec
+
+gosec:
+		$(call require,$(GOSEC),go install github.com/securego/gosec/v2/cmd/gosec@latest)
+		CGO_ENABLED=$(CGO_ENABLED) $(GOSEC) ./...
 
 ## SAST
 coverage:

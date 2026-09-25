@@ -377,7 +377,8 @@ func getFlagTable(c *cobra.Command, format string) string {
 // since the csv, html and plain-text renderings are consumed as data rather than published as
 // pages.
 func writeFlagTableToFile(c *cobra.Command, format string, filename string, frontMatter string) error {
-	f, err := os.Create(filename) //nolint:gosec // filename derives from the operator-supplied --output-dir CLI flag, not untrusted input
+	// #nosec G304 -- filename derives from the operator-supplied --output-dir CLI flag, not untrusted input
+	f, err := os.Create(filename) //nolint:gosec
 	if err != nil {
 		return err
 	}

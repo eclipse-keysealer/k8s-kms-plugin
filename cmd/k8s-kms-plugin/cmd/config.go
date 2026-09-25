@@ -258,7 +258,8 @@ func loadConfigFileE(cmd *cobra.Command) error {
 		return nil
 	}
 
-	raw, err := os.ReadFile(path) //nolint:gosec // the path comes from the operator, through --config, an env var or their home directory
+	// #nosec G304 -- the path comes from the operator, through --config, an env var or their home directory
+	raw, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		if !explicit && errors.Is(err, os.ErrNotExist) {
 			// Raced against a deletion between the search and the read.

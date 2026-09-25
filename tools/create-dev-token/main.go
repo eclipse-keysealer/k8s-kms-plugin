@@ -69,6 +69,8 @@ func init() {
 }
 
 const (
+	// #nosec G101 -- dev-only tool: the token label and SO PIN below are fixed
+	// values for a throwaway local PKCS#11 token, not production credentials.
 	tokenLabel = "k8s-kms-plugin-dev" //nolint:gosec // not a credential: it's the PKCS#11 token label, not a secret value
 	soPin      = "0000"
 	// defaultSocket is the unix-socket path used in the printed k8s-kms-plugin
