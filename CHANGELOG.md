@@ -239,7 +239,7 @@ and [pkcs11-go](https://github.com/eclipse-keypont/pkcs11-go) from the
   `--socket` flag and its own `--version` output; built in CI alongside the main plugin.
 - End-to-end `serve rotation` tests covering all 16 old/new algorithm-family combinations.
 - A Cryptography Bill of Materials-style Notices generator (`go-licenses`-based `NOTICES.md`).
-- CI workflows for build, lint, secret scanning (Gitleaks) and OpenSSF Scorecard; `make lint-fix`
+- CI workflows for build, lint, secret scanning (GitHub native) and OpenSSF Scorecard; `make lint-fix`
   Makefile target.
 
 ### Fixed
@@ -280,6 +280,9 @@ and [pkcs11-go](https://github.com/eclipse-keypont/pkcs11-go) from the
   `.goreleaser.yml` now pass `--bundle` to `cosign sign-blob`, which is required by cosign v3 and is
   what `sigstore/cosign-installer` now provides.
 - Reference to the project's Eclipse Foundation donation added to project docs.
+- `govulncheck` now runs the `golang.org/x/vuln` tool directly (pinned) instead of
+  `golang/govulncheck-action`, whose internal `actions/checkout` collided with the workflow's own
+  checkout on the `Authorization` header (`git` error 400).
 
 ## Pre-1.0 (`ThalesGroup` era, v0.x)
 
