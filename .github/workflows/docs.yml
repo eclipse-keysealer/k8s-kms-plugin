@@ -53,7 +53,7 @@ jobs:
     steps:
       # actions/checkout v5.0.0
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           # Hugo's .Lastmod and the "last updated" footer read commit dates.
           fetch-depth: 0
@@ -61,7 +61,7 @@ jobs:
       # actions/setup-go v6.0.0 — Hugo is a Go program and the theme is a Hugo Module, so the Go
       # toolchain is all that is needed to install and run it.
       - name: Set up Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
           cache: true
@@ -176,4 +176,4 @@ jobs:
       # actions/deploy-pages v5.0.0
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346
