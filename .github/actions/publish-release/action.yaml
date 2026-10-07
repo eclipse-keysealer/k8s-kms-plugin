@@ -83,12 +83,32 @@ runs:
         ARTIFACTS: ${{ steps.goreleaser.outputs.artifacts }}
       run: |
         set -euo pipefail
-        image_and_digest=$(echo "$ARTIFACTS" \
-          | jq -r '.[] | select(.type=="Docker Manifest") | .path')
-        echo "name=$(echo "$image_and_digest" | cut -d'@' -f1 | cut -d':' -f1)" \
-          >> "$GITHUB_OUTPUT"
-        echo "digest=$(echo "$image_and_digest" | cut -d'@' -f2)" \
-          >> "$GITHUB_OUTPUT"
+        # goreleaser v2 reports the image as a "Docker Manifest" artifact whose
+        # .path is the bare image name and whose digest lives in .extra.Digest.
+        # (Older goreleaser put "name@digest" in .path; do not rely on that.)
+        manifest=$(echo "$ARTIFACTS" \
+          | jq -r '.[] | select(.type=="Docker Manifest")')
+        if [[ -z "$manifest" ]]; then
+          echo "::error::no Docker Manifest artifact found in goreleaser output"
+          exit 1
+        fi
+
+        # Strip any "@digest" and a trailing ":tag" (but not a registry port,
+        # which is followed by "/").
+        name=$(echo "$manifest" | jq -r '.path' | sed -E 's/@.*$//; s/:[^/:]*$//')
+        digest=$(echo "$manifest" | jq -r '.extra.Digest // empty')
+
+        if [[ -z "$name" || -z "$digest" ]]; then
+          echo "::error::could not resolve image name/digest (name='$name' digest='$digest')"
+          exit 1
+        fi
+        if [[ "$digest" != sha256:* ]]; then
+          echo "::error::unexpected image digest format: '$digest'"
+          exit 1
+        fi
+
+        echo "name=$name" >> "$GITHUB_OUTPUT"
+        echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
     # -- Image signing --------------------------------------------------------
     # Signs the exact image@digest produced above. Handled here rather than via
