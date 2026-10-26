@@ -96,8 +96,12 @@ type P11 struct {
 	// KMS v0.34.0 and later uses official https://github.com/protocolbuffers/protobuf-go. This demands that the gRPC server embeds UnimplementedKeyManagementServiceServer to automatically satisfy method mustEmbedUnimplementedKeyManagementServiceServer()
 	k8skmsv2.UnimplementedKeyManagementServiceServer
 
-	// mu guards encryptors, decryptors, and oldDecryptors against concurrent reads and writes.
+	// mu guards encryptors, decryptors, oldDecryptors and keys against concurrent reads and writes.
 	mu sync.RWMutex
+
+	// keys caches the crypto11 key objects resolved on the tokens, so that a KEK is looked up on
+	// the first request that needs it rather than on every request. See keycache.go.
+	keys map[keyRef]any
 
 	// active KEK parameters
 	config          *crypto11.Config             // Active configuration for the crypto11 library
@@ -436,6 +440,7 @@ func (p *P11) Close() (err error) {
 	p.mu.Lock()
 	p.encryptors = nil
 	p.decryptors = nil
+	p.keys = nil
 	p.mu.Unlock()
 	err = p.ctx.Close()
 
@@ -617,23 +622,22 @@ func (p *P11) decryptWithContext(req *k8skmsv2.DecryptRequest, isRotation bool) 
 			slog.Log(context.Background(), logging.LevelTrace, "p11:Decrypt case", "algorithm", actualAlgo)
 
 			// get kek by CKA_ID
-			var kek *crypto11.SecretKey
-
 			// Since the DecryptRequest comes from kubernetes, the only information k8s has is the keyId via the StatusResponse
-			if kek, err = actualCtx.FindKey(reqKekKeyIDByteA, nil); nil != err {
-				slog.Error("error while finding key by CKA_ID", "DecryptRequest.KeyId", req.GetKeyId(), "error", err)
-				return nil, err
-			}
+			ref, find := secretKey(actualCtx, reqKekKeyIDByteA, nil)
+			find = logLookup(find, "error while finding key by CKA_ID", "DecryptRequest.KeyId", req.GetKeyId())
+			if err = withKey(p, ref, find, func(kek *crypto11.SecretKey) (err error) {
+				var aek gose.AeadEncryptionKey
+				if aek, err = p.makeAeadKey(actualCtx, rng, kek, actualKekCkaLabel); err != nil {
+					slog.Error("error while creating aead key", "error", err)
+					return
+				}
+				decryptor = gose.NewJweDirectDecryptorAeadImpl([]gose.AeadEncryptionKey{aek})
 
-			var aek gose.AeadEncryptionKey
-			if aek, err = p.makeAeadKey(actualCtx, rng, kek, actualKekCkaLabel); err != nil {
-				slog.Error("error while creating aead key", "error", err)
-				return nil, err
-			}
-			decryptor = gose.NewJweDirectDecryptorAeadImpl([]gose.AeadEncryptionKey{aek})
-
-			if out, aad, err = decryptor.Decrypt(string(req.GetCiphertext())); err != nil {
-				slog.Error("error during decryption", "error", err)
+				if out, aad, err = decryptor.Decrypt(string(req.GetCiphertext())); err != nil {
+					slog.Error("error during decryption", "error", err)
+				}
+				return
+			}); err != nil {
 				return nil, err
 			}
 			if nil != aad {
@@ -644,45 +648,51 @@ func (p *P11) decryptWithContext(req *k8skmsv2.DecryptRequest, isRotation bool) 
 			}
 		case AlgAESCBC:
 			slog.Log(context.Background(), logging.LevelTrace, "p11:Decrypt case", "algorithm", AlgAESCBC)
-			// get kek by id
-			var kek *crypto11.SecretKey
-			if kek, err = actualCtx.FindKey(reqKekKeyIDByteA, nil); nil != err {
-				slog.Error("error finding key by ID", "error", err)
-				return nil, err
-			}
-
 			// for decryption, we have to retrieve the iv from the jwe
 			var iv []byte
 			if iv, err = getIVFromDecryptRequest(req); err != nil {
 				return nil, err
 			}
-			// Initialize the CBC key for decryption
-			var blockMode crypto11.BlockModeCloser
-			if blockMode, err = kek.NewCBCDecrypterCloser(iv); err != nil {
-				return nil, fmt.Errorf("error initializing block cipher: %w", err)
-			}
-			// !!! It is very important to finalize each PKCS11 operation.
-			// Deferred immediately, for the reason given in Encrypt: an error between here
-			// and the HMAC setup would otherwise strand an active C_DecryptInit on the
-			// session and poison every subsequent operation with CKR_OPERATION_ACTIVE.
-			defer blockMode.Close()
 
-			cbcKey := gose.NewAesCbcCryptor(blockMode, req.GetKeyId(), jose.AlgA256CBC)
+			// get kek by id
+			kekRef, findKek := secretKey(actualCtx, reqKekKeyIDByteA, nil)
+			findKek = logLookup(findKek, "error finding key by ID")
 			// Initialize the hmac key for authentication
-			var hmacp11Key *crypto11.SecretKey
-			if hmacp11Key, err = actualCtx.FindKey(actualHmacCkaID, []byte(actualHmacCkaLabel)); err != nil {
-				return nil, fmt.Errorf("error getting hmac key from HSM with label '%s' or id '%s': %w", actualHmacCkaLabel, actualHmacCkaID, err)
-			}
-			var hash hash.Hash
-			if hash, err = hmacp11Key.NewHMAC(pkcs11.CKM_SHA256_HMAC, 0); err != nil {
-				return nil, fmt.Errorf("error initializing SHA26 with key '%s': %w", actualHmacCkaLabel, err)
-			}
-			hmacKey := gose.NewHmacShaCryptor(actualHmacCkaLabel, hash)
-			// decryptor
-			decryptor = gose.NewJweDirectDecryptorBlock(cbcKey, hmacKey)
+			hmacRef, findHmacKey := secretKey(actualCtx, actualHmacCkaID, []byte(actualHmacCkaLabel))
+			if err = withKey(p, kekRef, findKek, func(kek *crypto11.SecretKey) error {
+				return withKey(p, hmacRef, func() (*crypto11.SecretKey, error) {
+					hmacp11Key, err := findHmacKey()
+					if err != nil {
+						return nil, fmt.Errorf("error getting hmac key from HSM with label '%s' or id '%s': %w", actualHmacCkaLabel, actualHmacCkaID, err)
+					}
+					return hmacp11Key, nil
+				}, func(hmacp11Key *crypto11.SecretKey) (err error) {
+					// Initialize the CBC key for decryption
+					var blockMode crypto11.BlockModeCloser
+					if blockMode, err = kek.NewCBCDecrypterCloser(iv); err != nil {
+						return fmt.Errorf("error initializing block cipher: %w", err)
+					}
+					// !!! It is very important to finalize each PKCS11 operation.
+					// Deferred immediately, for the reason given in Encrypt: an error after this
+					// point would otherwise strand an active C_DecryptInit on the session and
+					// poison every subsequent operation with CKR_OPERATION_ACTIVE.
+					defer blockMode.Close()
 
-			if out, aad, err = decryptor.Decrypt(string(req.GetCiphertext())); err != nil {
-				slog.Error("error during decryption", "error", err)
+					cbcKey := gose.NewAesCbcCryptor(blockMode, req.GetKeyId(), jose.AlgA256CBC)
+					var hash hash.Hash
+					if hash, err = hmacp11Key.NewHMAC(pkcs11.CKM_SHA256_HMAC, 0); err != nil {
+						return fmt.Errorf("error initializing SHA26 with key '%s': %w", actualHmacCkaLabel, err)
+					}
+					hmacKey := gose.NewHmacShaCryptor(actualHmacCkaLabel, hash)
+					// decryptor
+					decryptor = gose.NewJweDirectDecryptorBlock(cbcKey, hmacKey)
+
+					if out, aad, err = decryptor.Decrypt(string(req.GetCiphertext())); err != nil {
+						slog.Error("error during decryption", "error", err)
+					}
+					return
+				})
+			}); err != nil {
 				return nil, err
 			}
 			if nil != aad {
@@ -694,36 +704,46 @@ func (p *P11) decryptWithContext(req *k8skmsv2.DecryptRequest, isRotation bool) 
 		case AlgRSAOAEP:
 			slog.Log(context.Background(), logging.LevelTrace, "p11:Decrypt case", "algorithm", AlgRSAOAEP)
 			// load pkcs11 context
-			var rsaKeyPair crypto11.SignerDecrypter
-			if rsaKeyPair, err = actualCtx.FindRSAKeyPair(reqKekKeyIDByteA, nil); err != nil {
-				slog.Error("error finding RSA key pair", "keyId", fmt.Sprintf("%X", reqKekKeyIDByteA), "error", err)
-				return nil, fmt.Errorf("error finding RSA key pair with id %X: %w", reqKekKeyIDByteA, err)
-			}
+			ref, find := rsaKeyPair(actualCtx, reqKekKeyIDByteA, nil)
+			if err = withKey(p, ref, func() (crypto11.SignerDecrypter, error) {
+				rsaKeyPair, err := find()
+				if err != nil {
+					slog.Error("error finding RSA key pair", "keyId", fmt.Sprintf("%X", reqKekKeyIDByteA), "error", err)
+					return nil, fmt.Errorf("error finding RSA key pair with id %X: %w", reqKekKeyIDByteA, err)
+				}
+				return rsaKeyPair, nil
+			}, func(rsaKeyPair crypto11.SignerDecrypter) (err error) {
+				var privKey *hsm.AsymmetricDecryptionKey
+				// Build the key on actualCtx (the context the key pair was just found on),
+				// not p.ctx. During rotation actualCtx is the old KEK's context, which may be a
+				// different HSM; p.ctx is the active one. hsm.AsymmetricDecryptionKey.Decrypt
+				// draws its OAEP random reader from the context passed here, so using p.ctx made
+				// an old-KEK decrypt depend on the active token's availability.
+				if privKey, err = hsm.NewAsymmetricDecryptionKey(actualCtx, rsaKeyPair, reqKekKeyIDByteA, nil); err != nil {
+					slog.Error("error creating AsymmetricDecryptionKey", "keyId", fmt.Sprintf("%X", reqKekKeyIDByteA), "error", err)
+					return fmt.Errorf("error creating AsymmetricDecryptionKey with id %X: %w", reqKekKeyIDByteA, err)
+				}
+				// create key store from private key
+				var store gose.AsymmetricDecryptionKeyStore
+				if store, err = gose.NewAsymmetricDecryptionKeyStoreImpl(map[string]gose.AsymmetricDecryptionKey{req.GetKeyId(): privKey}); err != nil {
+					slog.Error("error creating AsymmetricDecryptionKeyStore", "keyId", fmt.Sprintf("%X", reqKekKeyIDByteA), "error", err)
+					return fmt.Errorf("error creating AsymmetricDecryptionKeyStore with id %X: %w", reqKekKeyIDByteA, err)
+				}
 
-			var privKey *hsm.AsymmetricDecryptionKey
-			if privKey, err = hsm.NewAsymmetricDecryptionKey(p.ctx, rsaKeyPair, reqKekKeyIDByteA, nil); err != nil {
-				slog.Error("error creating AsymmetricDecryptionKey", "keyId", fmt.Sprintf("%X", reqKekKeyIDByteA), "error", err)
-				return nil, fmt.Errorf("error creating AsymmetricDecryptionKey with id %X: %w", reqKekKeyIDByteA, err)
-			}
-			// create key store from private key
-			var store gose.AsymmetricDecryptionKeyStore
-			if store, err = gose.NewAsymmetricDecryptionKeyStoreImpl(map[string]gose.AsymmetricDecryptionKey{req.GetKeyId(): privKey}); err != nil {
-				slog.Error("error creating AsymmetricDecryptionKeyStore", "keyId", fmt.Sprintf("%X", reqKekKeyIDByteA), "error", err)
-				return nil, fmt.Errorf("error creating AsymmetricDecryptionKeyStore with id %X: %w", reqKekKeyIDByteA, err)
-			}
+				// create decryptor
+				decryptor := gose.NewJweRsaKeyEncryptionDecryptorImpl(store)
 
-			// create decryptor
-			decryptor := gose.NewJweRsaKeyEncryptionDecryptorImpl(store)
-
-			// Decrypt with an explicit SHA-256 rather than crypto.Hash(0) (which would derive the
-			// digest from the "alg" header). This plugin has only ever wrapped the CEK with
-			// SHA-256, so SHA-256 is correct for every object it can encounter — including those
-			// written before gose v1.0.0-rc2, whose headers say "RSA-OAEP" (SHA-1 per RFC 7518)
-			// while the CEK is SHA-256-wrapped. Deriving from the header would fail on exactly
-			// those, and a KMS plugin must never lose the ability to read its own data at rest.
-			out, _, err = decryptor.Decrypt(string(req.GetCiphertext()), crypto.SHA256)
-			if err != nil {
-				slog.Error("decryption failed", "error", err)
+				// Decrypt with an explicit SHA-256 rather than crypto.Hash(0) (which would derive the
+				// digest from the "alg" header). This plugin has only ever wrapped the CEK with
+				// SHA-256, so SHA-256 is correct for every object it can encounter — including those
+				// written before gose v1.0.0-rc2, whose headers say "RSA-OAEP" (SHA-1 per RFC 7518)
+				// while the CEK is SHA-256-wrapped. Deriving from the header would fail on exactly
+				// those, and a KMS plugin must never lose the ability to read its own data at rest.
+				if out, _, err = decryptor.Decrypt(string(req.GetCiphertext()), crypto.SHA256); err != nil {
+					slog.Error("decryption failed", "error", err)
+				}
+				return
+			}); err != nil {
 				return nil, err
 			}
 		default:
@@ -768,82 +788,87 @@ func (p *P11) Encrypt(ctx context.Context, req *k8skmsv2.EncryptRequest) (resp *
 		case AlgAESGCM:
 			slog.Log(ctx, logging.LevelTrace, "p11:Encrypt case", "algorithm", p.algorithmFamily)
 			// Find the KEK in the KMS
-			var kek *crypto11.SecretKey
-			if kek, err = p.ctx.FindKey(p.kekCkaID, p.GetKekCkaLabelByteA()); nil != err {
-				slog.Error("Encrypt: cannot find a symmetric key", "algorithm", p.algorithmFamily, "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString(), "error", err)
-				return
-			}
+			ref, find := secretKey(p.ctx, p.kekCkaID, p.GetKekCkaLabelByteA())
+			find = logLookup(find, "Encrypt: cannot find a symmetric key", "algorithm", p.algorithmFamily, "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString())
+			if err = withKey(p, ref, find, func(kek *crypto11.SecretKey) (err error) {
+				// Random source from the HSM (pkcs11 context)
+				var rng io.Reader
+				if rng, err = p.ctx.NewRandomReader(); err != nil {
+					slog.Error("Encrypt: cannot get a random source from the HSM (pkcs11 context)", "error", err)
+					return
+				}
+				var aek gose.AeadEncryptionKey
+				if aek, err = p.makeAeadKey(p.ctx, rng, kek, p.kekCkaLabel); err != nil {
+					slog.Error("Encrypt: cannot create an aead key", "error", err)
+					return
+				}
 
-			// Random source from the HSM (pkcs11 context)
-			var rng io.Reader
-			if rng, err = p.ctx.NewRandomReader(); err != nil {
-				slog.Error("Encrypt: cannot get a random source from the HSM (pkcs11 context)", "error", err)
+				encryptor = gose.NewJweDirectEncryptorAead(aek, p.config.UseGCMIVFromHSM)
+				// output is the marshalled jwe
+				if out, err = encryptor.Encrypt(req.GetPlaintext(), nil); err != nil {
+					slog.Error("Encrypt: encryption failed", "error", err)
+				}
 				return
-			}
-			var aek gose.AeadEncryptionKey
-			if aek, err = p.makeAeadKey(p.ctx, rng, kek, p.kekCkaLabel); err != nil {
-				slog.Error("Encrypt: cannot create an aead key", "error", err)
-				return
-			}
-
-			encryptor = gose.NewJweDirectEncryptorAead(aek, p.config.UseGCMIVFromHSM)
-			// output is the marshalled jwe
-			if out, err = encryptor.Encrypt(req.GetPlaintext(), nil); err != nil {
-				slog.Error("Encrypt: encryption failed", "error", err)
-				return
+			}); err != nil {
+				return nil, err
 			}
 
 		case AlgAESCBC:
 			slog.Log(ctx, logging.LevelTrace, "p11:Encrypt case", "algorithm", AlgAESCBC)
 			// Find the KEK in the KMS
-			var kek *crypto11.SecretKey
-			if kek, err = p.ctx.FindKey(p.kekCkaID, p.GetKekCkaLabelByteA()); nil != err {
-				slog.Error("Encrypt: cannot find a symmetric key", "algorithm", p.algorithmFamily, "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString(), "error", err)
-				return
-			}
-
-			// Random source from the HSM (pkcs11 context)
-			var rng io.Reader
-			if rng, err = p.ctx.NewRandomReader(); err != nil {
-				slog.Error("Encrypt: cannot get a random source from the HSM (pkcs11 context)", "error", err)
-				return
-			}
-			// generate the IV from the KMS, using the kek block size
-			iv := make([]byte, kek.Cipher.BlockSize)
-			if _, err = rng.Read(iv); err != nil {
-				return
-			}
-			// Initialize the CBC key for encryption
-			var blockMode crypto11.BlockModeCloser
-			if blockMode, err = kek.NewCBCEncrypterCloser(iv); err != nil {
-				return nil, fmt.Errorf("error initializing block cipher: %w", err)
-			}
-			// !!! It is very important to finalize each PKCS11 operation.
-			// Deferred immediately after the operation is opened, not after the HMAC key is
-			// set up: PKCS#11 allows one active operation per session, so any error return
-			// between the two would otherwise leave C_EncryptInit active and every later
-			// operation on this session would fail with CKR_OPERATION_ACTIVE.
-			defer blockMode.Close()
-			// jose.AlgA256CBC is the only standardized JWE AES-CBC key size (unlike AES-GCM
-			// which exists as AlgA128GCM / AlgA192GCM / AlgA256GCM). The key on the HSM must be 256-bit.
-			cbcKey := gose.NewAesCbcCryptor(blockMode, p.GetKekKeyIDString(), jose.AlgA256CBC)
-
+			kekRef, findKek := secretKey(p.ctx, p.kekCkaID, p.GetKekCkaLabelByteA())
+			findKek = logLookup(findKek, "Encrypt: cannot find a symmetric key", "algorithm", p.algorithmFamily, "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString())
 			// Initialize the hmac key for authentication TODO: consider allowing user to use a CKA_ID to get the HMAC key
-			var hmacp11Key *crypto11.SecretKey
-			if hmacp11Key, err = p.ctx.FindKey(p.hmacCkaID, []byte(p.hmacCkaLabel)); err != nil {
-				return nil, fmt.Errorf("error getting hmac key from HSM with label '%s' and id '%s': %w", p.hmacCkaLabel, p.GetHmacKeyIDString(), err)
-			}
-			var hash hash.Hash
-			if hash, err = hmacp11Key.NewHMAC(pkcs11.CKM_SHA256_HMAC, 0); err != nil {
-				return nil, fmt.Errorf("error initializing CKM_SHA256_HMAC with key '%s': %w", p.hmacCkaLabel, err)
-			}
-			hmacKey := gose.NewHmacShaCryptor(p.hmacCkaLabel, hash)
-			// encryptor
-			encryptor = gose.NewJweDirectEncryptorBlock(cbcKey, hmacKey, iv)
-			// output is the marshalled jwe
-			if out, err = encryptor.Encrypt(req.GetPlaintext(), nil); err != nil {
-				slog.Error("Encrypt: encryption failed", "error", err)
-				return
+			hmacRef, findHmacKey := secretKey(p.ctx, p.hmacCkaID, []byte(p.hmacCkaLabel))
+			if err = withKey(p, kekRef, findKek, func(kek *crypto11.SecretKey) error {
+				return withKey(p, hmacRef, func() (*crypto11.SecretKey, error) {
+					hmacp11Key, err := findHmacKey()
+					if err != nil {
+						return nil, fmt.Errorf("error getting hmac key from HSM with label '%s' and id '%s': %w", p.hmacCkaLabel, p.GetHmacKeyIDString(), err)
+					}
+					return hmacp11Key, nil
+				}, func(hmacp11Key *crypto11.SecretKey) (err error) {
+					// Random source from the HSM (pkcs11 context)
+					var rng io.Reader
+					if rng, err = p.ctx.NewRandomReader(); err != nil {
+						slog.Error("Encrypt: cannot get a random source from the HSM (pkcs11 context)", "error", err)
+						return
+					}
+					// generate the IV from the KMS, using the kek block size
+					iv := make([]byte, kek.Cipher.BlockSize)
+					if _, err = rng.Read(iv); err != nil {
+						return
+					}
+					// Initialize the CBC key for encryption
+					var blockMode crypto11.BlockModeCloser
+					if blockMode, err = kek.NewCBCEncrypterCloser(iv); err != nil {
+						return fmt.Errorf("error initializing block cipher: %w", err)
+					}
+					// !!! It is very important to finalize each PKCS11 operation.
+					// Deferred immediately after the operation is opened: PKCS#11 allows one
+					// active operation per session, so any error return after this point would
+					// otherwise leave C_EncryptInit active and every later operation on this
+					// session would fail with CKR_OPERATION_ACTIVE.
+					defer blockMode.Close()
+					// jose.AlgA256CBC is the only standardized JWE AES-CBC key size (unlike AES-GCM
+					// which exists as AlgA128GCM / AlgA192GCM / AlgA256GCM). The key on the HSM must be 256-bit.
+					cbcKey := gose.NewAesCbcCryptor(blockMode, p.GetKekKeyIDString(), jose.AlgA256CBC)
+
+					var hash hash.Hash
+					if hash, err = hmacp11Key.NewHMAC(pkcs11.CKM_SHA256_HMAC, 0); err != nil {
+						return fmt.Errorf("error initializing CKM_SHA256_HMAC with key '%s': %w", p.hmacCkaLabel, err)
+					}
+					hmacKey := gose.NewHmacShaCryptor(p.hmacCkaLabel, hash)
+					// encryptor
+					encryptor = gose.NewJweDirectEncryptorBlock(cbcKey, hmacKey, iv)
+					// output is the marshalled jwe
+					if out, err = encryptor.Encrypt(req.GetPlaintext(), nil); err != nil {
+						slog.Error("Encrypt: encryption failed", "error", err)
+					}
+					return
+				})
+			}); err != nil {
+				return nil, err
 			}
 
 		case AlgRSAOAEP:
@@ -866,6 +891,9 @@ func (p *P11) Encrypt(ctx context.Context, req *k8skmsv2.EncryptRequest) (resp *
 			//         "alg":"RS256",
 			//         "kid":"2011-04-29"
 			//    }
+			// Not cached, unlike every other lookup: encryption only uses the public key, in
+			// software, so nothing would ever tell a cached key pair that the key on the token
+			// had been replaced, and every Encrypt would keep wrapping under the old key.
 			var rsaKeyPair crypto11.SignerDecrypter
 			if rsaKeyPair, err = p.ctx.FindRSAKeyPair(p.kekCkaID, p.GetKekCkaLabelByteA()); err != nil {
 				slog.Error("Encrypt: cannot find an rsa key pair", "algorithm", p.algorithmFamily, "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString(), "error", err)

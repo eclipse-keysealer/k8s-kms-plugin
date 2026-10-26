@@ -146,16 +146,29 @@ func mlkemSharedSecretTemplate() crypto11.AttributeSet {
 // ML-KEM-768/1024. The HSM performs the KEM encapsulation; the shared secret is extracted
 // and passed through crypto11.MLKEMDeriveKey's KMAC KDF to derive the AES key.
 func (p *P11) encryptMLKEM(ctx context.Context, req *k8skmsv2.EncryptRequest) (*k8skmsv2.EncryptResponse, error) {
-	kp, err := p.ctx.FindMLKEMKeyPair(p.kekCkaID, p.GetKekCkaLabelByteA())
+	var (
+		kp    crypto11.MLKEMKeyPair
+		kemCt []byte
+		ss    *crypto11.MLKEMSharedSecret
+	)
+	ref, find := mlkemKeyPair(p.ctx, p.kekCkaID, p.GetKekCkaLabelByteA())
+	err := withKey(p, ref, func() (crypto11.MLKEMKeyPair, error) {
+		kp, err := find()
+		if err != nil {
+			slog.Error("encryptMLKEM: cannot find ML-KEM key pair", "uid", req.GetUid(), "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString(), "error", err)
+			return nil, fmt.Errorf("encryptMLKEM: cannot find ML-KEM key pair (label=%s id=%x): %w", p.kekCkaLabel, p.kekCkaID, err)
+		}
+		return kp, nil
+	}, func(k crypto11.MLKEMKeyPair) (err error) {
+		if kemCt, ss, err = k.Encapsulate(mlkemSharedSecretTemplate()); err != nil {
+			slog.Error("encryptMLKEM: encapsulation failed", "uid", req.GetUid(), "keyId", p.GetKekKeyIDString(), "error", err)
+			return fmt.Errorf("encryptMLKEM: encapsulation failed: %w", err)
+		}
+		kp = k
+		return nil
+	})
 	if err != nil {
-		slog.Error("encryptMLKEM: cannot find ML-KEM key pair", "uid", req.GetUid(), "label", p.kekCkaLabel, "keyId", p.GetKekKeyIDString(), "error", err)
-		return nil, fmt.Errorf("encryptMLKEM: cannot find ML-KEM key pair (label=%s id=%x): %w", p.kekCkaLabel, p.kekCkaID, err)
-	}
-
-	kemCt, ss, err := kp.Encapsulate(mlkemSharedSecretTemplate())
-	if err != nil {
-		slog.Error("encryptMLKEM: encapsulation failed", "uid", req.GetUid(), "keyId", p.GetKekKeyIDString(), "error", err)
-		return nil, fmt.Errorf("encryptMLKEM: encapsulation failed: %w", err)
+		return nil, err
 	}
 	// Encapsulate creates a key object on the token. It is a session object
 	// (CKA_TOKEN=false in mlkemSharedSecretTemplate), so it would only be reclaimed when the
@@ -242,16 +255,28 @@ func (p *P11) decryptMLKEMWithContext(req *k8skmsv2.DecryptRequest, actualCtx *c
 		slog.Error("decryptMLKEM: invalid key_id hex", "uid", req.GetUid(), "keyId", req.GetKeyId(), "error", err)
 		return nil, fmt.Errorf("decryptMLKEM: invalid key_id hex %q: %w", req.GetKeyId(), err)
 	}
-	kp, err := actualCtx.FindMLKEMKeyPair(reqKeyID, nil)
+	var (
+		kp crypto11.MLKEMKeyPair
+		ss *crypto11.MLKEMSharedSecret
+	)
+	ref, find := mlkemKeyPair(actualCtx, reqKeyID, nil)
+	err = withKey(p, ref, func() (crypto11.MLKEMKeyPair, error) {
+		kp, err := find()
+		if err != nil {
+			slog.Error("decryptMLKEM: cannot resolve ML-KEM private key", "uid", req.GetUid(), "keyId", req.GetKeyId(), "error", err)
+			return nil, fmt.Errorf("decryptMLKEM: cannot resolve ML-KEM private key (key_id=%s): %w", req.GetKeyId(), err)
+		}
+		return kp, nil
+	}, func(k crypto11.MLKEMKeyPair) (err error) {
+		if ss, err = k.Decapsulate(kemCt, mlkemSharedSecretTemplate()); err != nil {
+			slog.Error("decryptMLKEM: decapsulation failed", "uid", req.GetUid(), "keyId", req.GetKeyId(), "error", err)
+			return fmt.Errorf("decryptMLKEM: decapsulation failed: %w", err)
+		}
+		kp = k
+		return nil
+	})
 	if err != nil {
-		slog.Error("decryptMLKEM: cannot resolve ML-KEM private key", "uid", req.GetUid(), "keyId", req.GetKeyId(), "error", err)
-		return nil, fmt.Errorf("decryptMLKEM: cannot resolve ML-KEM private key (key_id=%s): %w", req.GetKeyId(), err)
-	}
-
-	ss, err := kp.Decapsulate(kemCt, mlkemSharedSecretTemplate())
-	if err != nil {
-		slog.Error("decryptMLKEM: decapsulation failed", "uid", req.GetUid(), "keyId", req.GetKeyId(), "error", err)
-		return nil, fmt.Errorf("decryptMLKEM: decapsulation failed: %w", err)
+		return nil, err
 	}
 	// Same session object as in encryptMLKEM, released for the same reason.
 	defer destroySharedSecret(ss, "decryptMLKEM", req.GetUid())

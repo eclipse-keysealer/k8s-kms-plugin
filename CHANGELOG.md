@@ -115,6 +115,17 @@ others were verified to be false positives and left alone.
   `docs/installation.md`). go1.27.3 is a patch release that fixes the `crypto/x509`
   standard-library vulnerability `GO-2026-6809` ("distrust compromised intermediate
   certificates") flagged by `govulncheck` on go1.27.2.
+- **Each KEK is resolved on the token once, not on every request.** `Encrypt` and `Decrypt`
+  looked up the KEK (and, for `aes-cbc`, the HMAC key) with `C_FindObjects` on every call, plus
+  attribute reads, more for a key pair; on a network HSM (Luna Network HSM, DPoD) each of those
+  calls is a round trip. The provider now keeps the crypto11 key object from the first lookup
+  (`pkg/providers/keycache.go`). If an operation with a cached key fails, the key is dropped and
+  the operation retried once with a fresh lookup, so a KEK deleted and re-created under the same
+  `CKA_ID` and `CKA_LABEL` is still picked up without a restart, as before; a panic raised by
+  crypto11 during the operation (its `cipher.AEAD` and `cipher.BlockMode` report token failures
+  that way) now fails the request instead of the process. `rsa-oaep` encryption, which uses
+  only the public key and in software, still looks the key pair up on every call: nothing would
+  tell a cached one that the key had been replaced.
 - **CLI help reviewed end to end.** Every `Short`, `Long`, example and flag description was
   rewritten to say what the command actually does. The notable corrections:
   - the root command described itself as "Thales KMS Server for K8S" and never mentioned that
