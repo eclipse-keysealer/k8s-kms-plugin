@@ -346,8 +346,11 @@ func TestP11_SetOldKekKeyIdString(t *testing.T) {
 	assert.Equal(t, expected, p.oldKekCkaID)
 }
 
-// Tests for Status method
-func TestP11_Status_Success(t *testing.T) {
+// Tests for Status method. The happy "ok" path requires a usable token (Status now runs a
+// liveness probe against it); it is covered by the integration suite. This unit test, with
+// no PKCS#11 context, checks the KEK-ID/version plumbing and that a token that cannot be
+// probed is reported as not healthy rather than "ok".
+func TestP11_Status_NoTokenReportsUnhealthy(t *testing.T) {
 	p := &P11{
 		kekCkaID: []byte{0x12, 0x34, 0x56, 0x78},
 	}
@@ -360,8 +363,8 @@ func TestP11_Status_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.Equal(t, "v2", resp.Version)
-	assert.Equal(t, "ok", resp.Healthz)
 	assert.Equal(t, "12345678", resp.KeyId)
+	assert.NotEqual(t, "ok", resp.Healthz, "Status must not report ok when the token cannot be probed")
 }
 
 func TestP11_Status_NilKekId(t *testing.T) {
