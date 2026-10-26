@@ -265,10 +265,10 @@ func main() {
 	if err != nil {
 		fatalf("NewAttributeSetWithIDAndLabel HMAC: %v", err)
 	}
-	if err := hmacAttrs.Set(crypto11.CkaSign, true); err != nil {
+	if err := hmacAttrs.Set(pkcs11.CKA_SIGN, true); err != nil {
 		fatalf("hmacAttrs.Set(CkaSign): %v", err)
 	}
-	if err := hmacAttrs.Set(crypto11.CkaVerify, true); err != nil {
+	if err := hmacAttrs.Set(pkcs11.CKA_VERIFY, true); err != nil {
 		fatalf("hmacAttrs.Set(CkaVerify): %v", err)
 	}
 	hmacKey, err := ctx.GenerateSecretKeyWithAttributes(hmacAttrs, 256, crypto11.CipherGeneric)
