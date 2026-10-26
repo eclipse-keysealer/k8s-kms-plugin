@@ -37,6 +37,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/knadh/koanf/parsers/json"
@@ -160,6 +161,16 @@ func resolveCmdConfigE(cmd *cobra.Command, target any) (*cmdConfig, error) {
 		slog.Log(ctx, logging.LevelTrace, "no config file section for command", "section_path", section)
 	}
 
+	// Reject a config value whose YAML scalar was coerced away from a string for a flag that
+	// is a string. `p11-pin: 0123` is parsed as the integer 83 (octal) and would otherwise be
+	// sent to C_Login as "83"; the same coercion hits a numeric-looking CKA_ID. A wrong PIN on
+	// every start consumes the token's login-retry counter, so fail loudly and tell the user to
+	// quote the value rather than silently using one they did not write. Only the config file
+	// (this layer) can introduce a non-string type; env and flag values are always strings.
+	if err := rejectCoercedStringFlags(k, flags); err != nil {
+		return nil, err
+	}
+
 	// Layer 2 — environment variables. Only the variables that name a flag this command declares
 	// are read: mapping back from an environment variable to a flag name is ambiguous in general
 	// (an underscore may stand for a dash or for itself), and restricting the mapping to known
@@ -207,6 +218,28 @@ func resolveCmdConfigE(cmd *cobra.Command, target any) (*cmdConfig, error) {
 	syncFlagsFromConfig(cmd, flags, cfg)
 
 	return cfg, nil
+}
+
+// rejectCoercedStringFlags fails if the config file provided, for a string-typed flag, a value
+// that YAML parsed as something other than a string (a number, a boolean). Such a value would be
+// stringified into a form the user did not write (e.g. an octal 0123 -> "83", 1e3 -> "1000").
+// Custom-typed flags such as --algorithm-family validate themselves elsewhere and are skipped.
+func rejectCoercedStringFlags(k *koanf.Koanf, flags *pflag.FlagSet) error {
+	var coerced []string
+	flags.VisitAll(func(f *pflag.Flag) {
+		if f.Value.Type() != "string" || !k.Exists(f.Name) {
+			return
+		}
+		if _, ok := k.Get(f.Name).(string); !ok {
+			coerced = append(coerced, f.Name)
+		}
+	})
+	if len(coerced) == 0 {
+		return nil
+	}
+	sort.Strings(coerced)
+	return fmt.Errorf("configuration value(s) %v must be quoted: an unquoted YAML number or boolean is "+
+		"coerced to a different string (for example p11-pin: 0123 is read as \"83\"); quote the value", coerced)
 }
 
 // syncFlagsFromConfig writes back into the cobra flag set the values that reached the command
