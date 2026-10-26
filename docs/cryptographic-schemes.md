@@ -115,9 +115,13 @@ The simplest family: the AES key on the HSM *is* the content encryption key.
 
 1. Find the AES key by `CKA_ID` / `CKA_LABEL`.
 2. Read its `CKA_VALUE_LEN` to pick `A128GCM`, `A192GCM` or `A256GCM`.
-3. Generate a 96-bit IV. Where it comes from depends on `--provider`: for `luna` / `dpod` the HSM
-   supplies it during the GCM operation; for `p11` / `softhsm` it comes from the AEAD key's own
-   nonce generator. This is a vendor behaviour, not a user-facing switch.
+3. Generate a 128-bit (16-byte) IV: crypto11's default `GCMIVLength`, which the plugin does not
+   override. Where it comes from depends on `--provider`: for `luna` / `dpod` the HSM generates it
+   during the GCM operation and crypto11 hands it back appended to the tag; for `p11` / `softhsm`
+   the plugin draws it from the HSM RNG. This is a vendor behaviour, not a user-facing switch.
+   GCM accepts an IV of any length; one that is not 96 bits is run through GHASH to form the
+   initial counter block ([NIST SP 800-38D](https://doi.org/10.6028/NIST.SP.800-38D) §7.1). The
+   other two GCM uses on this page, in `rsa-oaep` and `ml-kem`, take 96-bit IVs.
 4. AES-GCM-seal the DEK seed **inside the HSM**, with the marshalled JWE header as AAD.
 5. Serialise as a JWE and return it in `ciphertext`.
 

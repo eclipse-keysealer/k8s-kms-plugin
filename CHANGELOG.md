@@ -78,6 +78,10 @@ others were verified to be false positives and left alone.
   since what is asserted is which path reaches crypto11, not that anything succeeds. An unknown
   `--provider` / `--old-provider` now also names the offending value instead of reporting a bare
   "unknown provider".
+- **The documentation gave the `aes-gcm` IV as 96 bits.** It is 128 bits (16 bytes), crypto11's
+  default `GCMIVLength`, which the plugin does not override; a JWE produced by the `aes-gcm`
+  family carries a 16-byte IV. `docs/cryptographic-schemes.md` and the glossary entry for
+  *Nonce* now give the size per family, and where each IV comes from. No code change.
 
 ### Removed
 
