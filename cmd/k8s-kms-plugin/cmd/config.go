@@ -34,10 +34,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/parsers/toml/v2"
@@ -258,14 +260,33 @@ func loadConfigFileE(cmd *cobra.Command) error {
 		return nil
 	}
 
+	// Open first, then stat the open fd and read from it, so the trust check and the read see
+	// the same file even if something swaps the path underneath us.
 	// #nosec G304 -- the path comes from the operator, through --config, an env var or their home directory
-	raw, err := os.ReadFile(path) //nolint:gosec
+	f, err := os.Open(path) //nolint:gosec
 	if err != nil {
 		if !explicit && errors.Is(err, os.ErrNotExist) {
 			// Raced against a deletion between the search and the read.
 			slog.Log(ctx, logging.LevelTrace, "config file disappeared before it could be read", "config_file", path)
 			return nil
 		}
+		return fmt.Errorf("error reading config file %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("error reading config file %s: %w", path, err)
+	}
+	// The config file may hold the PIN and names the PKCS#11 module that is loaded into the
+	// process, so a user who can write it can run code as the plugin. Refuse one that is
+	// writable by group or others, or owned by someone other than root or the plugin's user.
+	if terr := configFileIsTrusted(info); terr != nil {
+		return fmt.Errorf("refusing to read config file %s: %w", path, terr)
+	}
+
+	raw, err := io.ReadAll(f)
+	if err != nil {
 		return fmt.Errorf("error reading config file %s: %w", path, err)
 	}
 
@@ -277,6 +298,28 @@ func loadConfigFileE(cmd *cobra.Command) error {
 	configK = k
 	configFileUsed = path
 	slog.Log(ctx, logging.LevelTrace, "config file loaded", "config_file", path)
+	return nil
+}
+
+// configFileIsTrusted reports whether a config file is safe to read: not writable by group or
+// others, and owned by root or the plugin's effective user. A group/other-writable or
+// foreign-owned file lets someone who is not the plugin's operator change the PIN or redirect
+// --p11-lib, which is code execution as the plugin.
+func configFileIsTrusted(info os.FileInfo) error {
+	if info.IsDir() {
+		return errors.New("it is a directory, not a regular file")
+	}
+	if perm := info.Mode().Perm(); perm&0o022 != 0 {
+		return fmt.Errorf("it is writable by group or others (mode %s); only its owner may write it", perm)
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil // non-Unix: the mode check above is the best available
+	}
+	euid := os.Geteuid()
+	if st.Uid != 0 && int(st.Uid) != euid {
+		return fmt.Errorf("it is owned by uid %d, which is neither root nor the plugin's user (uid %d)", st.Uid, euid)
+	}
 	return nil
 }
 
