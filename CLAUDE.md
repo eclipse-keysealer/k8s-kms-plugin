@@ -115,7 +115,7 @@ These write files that are committed, so re-run them when the underlying source 
 - `make doc` — after adding or changing any CLI flag or command (regenerates `docs/cli-user-interface/`)
 - `make glossary` — after editing `docs/termbase.yaml` (regenerates `docs/glossary.md`; `make
   glossary-check` is the CI guard)
-- `make notices` — after changing dependencies (regenerates `NOTICES.md`)
+- `make notices` — after changing dependencies (regenerates `NOTICE.md`)
 
 `make doc` is **reproducible**, and CI's "is the CLI reference up to date" check depends on it
 entirely: it regenerates and fails on any diff, so anything that varies by clock, machine or
@@ -212,7 +212,7 @@ needs its own `_index.md` mount in `website/hugo.toml`.
 - A `README.md` is not a section index to Hugo; each one is excluded from the bulk mount and
   re-mounted as `_index.md`. A new docs subdirectory with a README needs its own mount.
 - The theme is a Hugo Module pinned in `website/go.mod`, deliberately separate from the plugin's
-  `go.mod` so it never reaches `go mod tidy`, `NOTICES.md` or `govulncheck`.
+  `go.mod` so it never reaches `go mod tidy`, `NOTICE.md` or `govulncheck`.
 - Mermaid and FlexSearch are fetched at build time and re-served with SRI hashes, at versions pinned
   in `hugo.toml` — Hextra's default is `mermaid@latest`. `website/README.md` documents the offline
   build.

@@ -5,7 +5,7 @@
 #
 # The site lives in this subdirectory rather than at the repository root for one reason: Hugo
 # Modules are Go modules, so a root-level Hugo project would add the theme to the plugin's own
-# go.mod — where it would reach `go mod tidy`, NOTICES.md and govulncheck, none of which should
+# go.mod — where it would reach `go mod tidy`, NOTICE.md and govulncheck, none of which should
 # know about a documentation theme. Keeping it here gives the site its own go.mod and leaves the
 # plugin's module graph untouched.
 #

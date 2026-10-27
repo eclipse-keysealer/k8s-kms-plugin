@@ -86,7 +86,7 @@ go install github.com/gohugoio/hugo@v0.164.0
 ## Why this directory exists
 
 Hugo Modules are Go modules. A Hugo project at the repository root would add the theme to the
-plugin's own `go.mod`, where it would surface in `go mod tidy`, `NOTICES.md` and `govulncheck` —
+plugin's own `go.mod`, where it would surface in `go mod tidy`, `NOTICE.md` and `govulncheck` —
 none of which should know about a documentation theme. Keeping the site here gives it a separate
 [`go.mod`](./go.mod), which pins the theme version with a checksum in `go.sum` and leaves the
 plugin's module graph untouched.

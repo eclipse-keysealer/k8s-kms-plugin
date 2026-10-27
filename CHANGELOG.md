@@ -280,7 +280,7 @@ and [pkcs11-go](https://github.com/eclipse-keypont/pkcs11-go) from the
   keys for every supported algorithm family (AES-GCM, AES-CBC+HMAC, RSA-OAEP, ML-KEM), with a
   `--socket` flag and its own `--version` output; built in CI alongside the main plugin.
 - End-to-end `serve rotation` tests covering all 16 old/new algorithm-family combinations.
-- A Cryptography Bill of Materials-style Notices generator (`go-licenses`-based `NOTICES.md`).
+- A Cryptography Bill of Materials-style Notices generator (`go-licenses`-based `NOTICE.md`).
 - CI workflows for build, lint, secret scanning (GitHub native) and OpenSSF Scorecard; `make lint-fix`
   Makefile target.
 

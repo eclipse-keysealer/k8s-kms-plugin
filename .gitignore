@@ -71,3 +71,9 @@ website/resources/
 website/.hugo_build.lock
 # Vendored JS for an offline site build; see website/hugo.toml [params.mermaid]
 website/assets/js/
+
+# scratch files `make notices` writes before atomically replacing NOTICE.md
+NOTICE.md.tmp
+NOTICE.md.all.tmp
+NOTICE.md.test.tmp
+NOTICE.md.new
