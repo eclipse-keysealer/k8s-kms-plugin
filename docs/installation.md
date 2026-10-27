@@ -302,7 +302,7 @@ The required Go version is the one declared in [`go.mod`](https://github.com/ecl
 with `go-version-file: go.mod`, so `go.mod` is the single source of truth — do not rely on the versions pinned in this
 document.
 
-[`NOTICES.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/NOTICES.md) lists all third-party dependency licenses and is auto-generated via `make notices` (requires [`go-licenses`](https://github.com/google/go-licenses)).
+[`NOTICE.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/NOTICE.md) lists all third-party dependency licenses and is auto-generated via `make notices` (requires [`go-licenses`](https://github.com/google/go-licenses)).
 
 **`CGO`** is required to build the plugin (`CGO_ENABLED=1` is set by the `Makefile`): **make sure you are using the right
 C Library** (glibc or musl) for your target environment. Do not build on musl libc if you intend to use the plugin on a
@@ -392,7 +392,7 @@ environment. See [`delve` Remote Debug](./development.md#delve-remote-debug) for
 | `make test-e2e`        | Builds the binary, then runs the end-to-end tests (`./test/e2e/...`) — needs `PKCS11_MODULE` and `grpcurl`, see [Running the Tests](./development.md#running-the-tests) |
 | `make coverage`        | Unit test coverage report in `build/coverage.html`                                          |
 | `make doc`             | Regenerates the CLI documentation under `docs/cli-user-interface/`                          |
-| `make notices`         | Regenerates [`NOTICES.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/NOTICES.md) (requires `go-licenses`)                           |
+| `make notices`         | Regenerates [`NOTICE.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/NOTICE.md) (requires `go-licenses`)                           |
 | `make image`           | Builds the binary, then packages it into a container image from the [`Containerfile`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/Containerfile) (see [Build the Container Image](#build-the-container-image)) |
 | `make image-from-source` | Same image, but compiled inside the builder stage — no local Go toolchain needed          |
 | `make get-ldflags`     | Prints the `LDFLAGS` used by the build — consumed by `goreleaser` (see [Build `k8s-kms-plugin` **locally** from Source with `goreleaser`](#build-k8s-kms-plugin-locally-from-source-with-goreleaser)) |
