@@ -4,9 +4,9 @@ go 1.27.3
 
 require (
 	github.com/creack/pty v1.1.24
-	github.com/eclipse-keypont/crypto11/v2 v2.0.0-rc8
-	github.com/eclipse-keypont/gose v1.0.0-rc10
-	github.com/eclipse-keypont/pkcs11-go v1.2.0-rc3
+	github.com/eclipse-keypont/crypto11/v2 v2.0.0-rc9
+	github.com/eclipse-keypont/gose v1.0.0-rc9
+	github.com/eclipse-keypont/pkcs11-go v1.2.0-rc4
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-version v1.9.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
@@ -16,15 +16,15 @@ require (
 	github.com/knadh/koanf/providers/confmap v1.0.1
 	github.com/knadh/koanf/providers/env v1.1.0
 	github.com/knadh/koanf/providers/posflag v1.0.2
-	github.com/knadh/koanf/v2 v2.3.8
+	github.com/knadh/koanf/v2 v2.4.1
 	github.com/lmittmann/tint v1.2.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/term v0.47.0
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/kms v0.37.1
+	k8s.io/kms v0.37.2
 )
 
 require (
