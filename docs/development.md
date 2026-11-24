@@ -24,7 +24,7 @@ and `make lint-fix`; the full list is in [Other Useful `make` Targets](./install
 Two of them regenerate tracked files, so re-run them when the relevant source changes:
 
 - `make doc` — after adding or changing a CLI flag or command ([CLI Auto Generated Documentation](./cli-user-interface/README.md#cli-auto-generated-documentation))
-- `make notices` — after changing dependencies, to refresh [`NOTICES.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/NOTICES.md)
+- `make notices` — after changing dependencies, to refresh [`NOTICE.md`](https://github.com/eclipse-keysealer/k8s-kms-plugin/blob/master/NOTICE.md)
 
 ### Running the Tests
 

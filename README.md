@@ -147,11 +147,11 @@ make check-doc-links # relative links and #anchors in the documentation
 ```
 
 If you changed a CLI flag or command, regenerate the CLI reference with `make doc`; if you changed
-dependencies, refresh [`NOTICES.md`](./NOTICES.md) with `make notices`. Both write tracked files.
+dependencies, refresh [`NOTICE.md`](./NOTICE.md) with `make notices`. Both write tracked files.
 
 See [Development & Debugging](./docs/development.md) for the full development setup, and
 [`CONTRIBUTORS`](./CONTRIBUTORS) for the list of contributors.
 
 # Licence
 
-[MIT](./LICENSE) — see [`NOTICES.md`](./NOTICES.md) for third-party dependency licences.
+[MIT](./LICENSE) — see [`NOTICE.md`](./NOTICE.md) for third-party dependency licences.

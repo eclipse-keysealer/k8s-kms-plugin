@@ -89,17 +89,25 @@ RISCV64_CC_INSTALL_HINT := sudo apt-get install gcc-riscv64-linux-gnu libc6-dev-
 # go-licenses renders go-licenses.tpl, which cannot pad the table cells to a
 # common width, so the raw output is piped through align-md-tables.awk.
 #
-# Both stages write to temp files and NOTICES.md is only replaced once the whole
+# Runtime dependencies are listed first. Test-only dependencies are listed in a
+# separate "Test-only dependencies" section, computed as the set difference
+# between the --include_tests report and the runtime report.
+#
+# Both stages write to temp files and NOTICE.md is only replaced once the whole
 # chain has succeeded. Writing into it directly would truncate the committed file
 # the moment either stage fails — and go-licenses does fail, e.g. against Go 1.26
-# (google/go-licenses#128) — leaving an empty NOTICES.md behind the error.
+# (google/go-licenses#128) — leaving an empty NOTICE.md behind the error.
 notices:
 		$(call require,go-licenses,go install github.com/google/go-licenses@latest)
-		@{ go-licenses report ./... --ignore github.com/eclipse-keysealer/k8s-kms-plugin --template go-licenses.tpl > NOTICES.md.tmp && \
-		   awk -f scripts/align-md-tables.awk NOTICES.md.tmp > NOTICES.md.aligned && \
-		   mv NOTICES.md.aligned NOTICES.md; } || { rm -f NOTICES.md.tmp NOTICES.md.aligned; exit 1; }
-		@rm -f NOTICES.md.tmp
-		@echo "NOTICES.md generated"
+		@{ go-licenses report ./... --ignore github.com/eclipse-keysealer/k8s-kms-plugin --template go-licenses.tpl > NOTICE.md.tmp && \
+		   go-licenses report ./... --include_tests --ignore github.com/eclipse-keysealer/k8s-kms-plugin --template go-licenses.tpl > NOTICE.md.all.tmp && \
+		   ( grep -vxF -f NOTICE.md.tmp NOTICE.md.all.tmp || true ) > NOTICE.md.test.tmp && \
+		   cat NOTICE.md.tmp > NOTICE.md.new && \
+		   { [ ! -s NOTICE.md.test.tmp ] || { printf '\n## Test-only dependencies\n\nThe following modules are used only by the test suite. They are not compiled into the released artifact and are therefore not part of what consumers link against.\n\n| Package | License | License URL |\n|---------|---------|-------------|\n' >> NOTICE.md.new && cat NOTICE.md.test.tmp >> NOTICE.md.new; }; } && \
+		   awk -f scripts/align-md-tables.awk NOTICE.md.new > NOTICE.md.aligned && \
+		   mv NOTICE.md.aligned NOTICE.md; } || { rm -f NOTICE.md.tmp NOTICE.md.all.tmp NOTICE.md.test.tmp NOTICE.md.new NOTICE.md.aligned; exit 1; }
+		@rm -f NOTICE.md.tmp NOTICE.md.all.tmp NOTICE.md.test.tmp NOTICE.md.new
+		@echo "NOTICE.md generated"
 
 ## Lint
 GOLANGCI_LINT ?= golangci-lint
