@@ -218,7 +218,7 @@ func NewP11(
 				}
 				p.oldHmacCkaLabel = oldHmacKeyLabel
 
-				if p.oldHmacCkaID, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, crypto11.CkaId, nil, []byte(p.oldHmacCkaLabel)); err != nil {
+				if p.oldHmacCkaID, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, pkcs11.CKA_ID, nil, []byte(p.oldHmacCkaLabel)); err != nil {
 					slog.Error("NewP11: failed to find HMAC CKA_ID by label", "error", err)
 					return nil, err
 				}
@@ -230,7 +230,7 @@ func NewP11(
 				}
 
 				var labelBuf []byte
-				if labelBuf, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, crypto11.CkaLabel, p.oldHmacCkaID, nil); err != nil {
+				if labelBuf, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, pkcs11.CKA_LABEL, p.oldHmacCkaID, nil); err != nil {
 					slog.Error("NewP11: failed to find old HMAC CKA_LABEL by ID", "error", err)
 					return nil, err
 				}
@@ -255,7 +255,7 @@ func NewP11(
 			}
 			p.oldKekCkaLabel = oldKekCkaLabel
 
-			if p.oldKekCkaID, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, crypto11.CkaId, nil, []byte(p.oldKekCkaLabel)); err != nil {
+			if p.oldKekCkaID, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, pkcs11.CKA_ID, nil, []byte(p.oldKekCkaLabel)); err != nil {
 				slog.Error("NewP11: failed to find OLD KEK CKA_ID by label", "error", err)
 				return nil, err
 			}
@@ -270,7 +270,7 @@ func NewP11(
 			}
 
 			var labelBuf []byte
-			if labelBuf, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, crypto11.CkaLabel, p.oldKekCkaID, nil); err != nil {
+			if labelBuf, err = FindCkaAttrByIDOrLabel(p.oldCtx, p.oldAlgorithmFamily, pkcs11.CKA_LABEL, p.oldKekCkaID, nil); err != nil {
 				slog.Error("NewP11: failed to find OLD KEK CKA_LABEL by CKA_ID", "error", err)
 				return nil, err
 			}
@@ -465,7 +465,7 @@ func (p *P11) makeAeadKey(ctx *crypto11.Context, rng io.Reader, kek *crypto11.Se
 // An explicit ctx.GetAttribute call is required because the key size is not
 // exposed through the crypto11.SecretKey interface.
 func aesGcmAlgFromKey(ctx *crypto11.Context, key *crypto11.SecretKey) (jose.Alg, error) {
-	attr, err := ctx.GetAttribute(key, crypto11.CkaValueLen)
+	attr, err := ctx.GetAttribute(key, pkcs11.CKA_VALUE_LEN)
 	if err != nil {
 		return "", fmt.Errorf("cannot read CKA_VALUE_LEN: %w", err)
 	}
@@ -1023,11 +1023,11 @@ func FindCkaAttrByIDOrLabel(ctx *crypto11.Context, algorithm jose.Alg, ckaAttr c
 	if ( // find ID by label
 	(len(id) == 0) &&
 		(label != nil || len(label) > 0) &&
-		(ckaAttr == crypto11.CkaId)) ||
+		(ckaAttr == pkcs11.CKA_ID)) ||
 		( // find label by ID
 		(id != nil || len(id) > 0) &&
 			(len(label) == 0) &&
-			(ckaAttr == crypto11.CkaLabel)) {
+			(ckaAttr == pkcs11.CKA_LABEL)) {
 
 		var err error
 		switch algorithm {
@@ -1102,7 +1102,7 @@ func GetKeyIDAndLabel(p *P11, keyID string, keyLabel string) (resultKeyID []byte
 		resultKeyLabel = keyLabel
 
 		keyLabelBytes := []byte(keyLabel)
-		resultKeyID, err = FindCkaAttrByIDOrLabel(p.ctx, p.algorithmFamily, crypto11.CkaId, nil, keyLabelBytes)
+		resultKeyID, err = FindCkaAttrByIDOrLabel(p.ctx, p.algorithmFamily, pkcs11.CKA_ID, nil, keyLabelBytes)
 		if err != nil {
 			slog.Error("no key found in HSM with the given CKA_LABEL — verify the label matches a key present on the configured PKCS#11 token",
 				"label", resultKeyLabel, "error", err)
@@ -1141,7 +1141,7 @@ func GetKeyIDAndLabel(p *P11, keyID string, keyLabel string) (resultKeyID []byte
 			return nil, "", fmt.Errorf("NewP11: cannot decode string CKA_ID into hex expected format '%s': %w", keyID, err)
 		}
 
-		if resultKeyLabelBytes, err = FindCkaAttrByIDOrLabel(p.ctx, p.algorithmFamily, crypto11.CkaLabel, resultKeyID, nil); err != nil {
+		if resultKeyLabelBytes, err = FindCkaAttrByIDOrLabel(p.ctx, p.algorithmFamily, pkcs11.CKA_LABEL, resultKeyID, nil); err != nil {
 			slog.Error("NewP11: failed to find key CKA_LABEL by CKA_ID", "keyId", fmt.Sprintf("%x", resultKeyID), "error", err)
 			return nil, "", err
 		}

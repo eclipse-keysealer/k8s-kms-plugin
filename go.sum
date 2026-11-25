@@ -6,12 +6,12 @@ github.com/cpuguy83/go-md2man/v2 v2.0.7/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6N
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
-github.com/eclipse-keypont/crypto11/v2 v2.0.0-rc8 h1:I6W5GJomIeSjoWBiaqrMBd5u8YYpAPn8U8mZJfTECRw=
-github.com/eclipse-keypont/crypto11/v2 v2.0.0-rc8/go.mod h1:NZbQQ3q3a0V5ng+JWJCwcpEK+3kStQ4BISW9IeGOxeM=
+github.com/eclipse-keypont/crypto11/v2 v2.0.0-rc9 h1:OBzI0xNUX47QdWF6TBJfdZSny7bFHGTof0LKN+Q3iX0=
+github.com/eclipse-keypont/crypto11/v2 v2.0.0-rc9/go.mod h1:f7EUDNDEm1JV+5bSEGO0t+Jr0dX8DRQC2T5/5Wfa2ts=
 github.com/eclipse-keypont/gose v1.0.0-rc10 h1:wijufOV8+sUHNwzwhoTFeXaJ7pDyTyjgCL3zxq2nUYc=
 github.com/eclipse-keypont/gose v1.0.0-rc10/go.mod h1:FSIkHz0mxX0Mx6ZuJdrKPwnUK8nloVw7MUZ9LMn8RS8=
-github.com/eclipse-keypont/pkcs11-go v1.2.0-rc3 h1:2Fnj4Q9p0gh/AAj1iW0tmMqd2N7ECk4tdIqsEnLUkQk=
-github.com/eclipse-keypont/pkcs11-go v1.2.0-rc3/go.mod h1:ac+LzvtNOZGVQzYdbzrjNgwkct47+UNS5x+bGMz+2Do=
+github.com/eclipse-keypont/pkcs11-go v1.2.0-rc4 h1:SulWtzH5Vxxfq0DdJWA2g6wumu9BGsV4RIo5uULqG0c=
+github.com/eclipse-keypont/pkcs11-go v1.2.0-rc4/go.mod h1:ac+LzvtNOZGVQzYdbzrjNgwkct47+UNS5x+bGMz+2Do=
 github.com/go-viper/mapstructure/v2 v2.5.0 h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
 github.com/go-viper/mapstructure/v2 v2.5.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=

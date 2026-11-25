@@ -21,6 +21,7 @@ import (
 
 	"github.com/eclipse-keypont/crypto11/v2"
 	"github.com/eclipse-keypont/gose/jose"
+	pkcs11 "github.com/eclipse-keypont/pkcs11-go/cryptoki"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -179,8 +180,8 @@ func TestAESCBC_EncryptDecrypt(t *testing.T) {
 	// HMAC key: CKK_GENERIC_SECRET with CKA_SIGN=true so CKM_SHA256_HMAC is permitted.
 	hmacAttrs, err := crypto11.NewAttributeSetWithIDAndLabel(hmacID, []byte(hmacLabel))
 	require.NoError(t, err)
-	require.NoError(t, hmacAttrs.Set(crypto11.CkaSign, true))
-	require.NoError(t, hmacAttrs.Set(crypto11.CkaVerify, true))
+	require.NoError(t, hmacAttrs.Set(pkcs11.CKA_SIGN, true))
+	require.NoError(t, hmacAttrs.Set(pkcs11.CKA_VERIFY, true))
 	hmacKey, err := testCtx.GenerateSecretKeyWithAttributes(hmacAttrs, 256, crypto11.CipherGeneric)
 	require.NoError(t, err, "generate HMAC key")
 	t.Cleanup(func() { _ = hmacKey.Delete() })

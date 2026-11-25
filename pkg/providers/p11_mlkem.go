@@ -125,12 +125,12 @@ func destroySharedSecret(ss *crypto11.MLKEMSharedSecret, op, uid string) {
 // crypto11.MLKEMDeriveKey.
 func mlkemSharedSecretTemplate() crypto11.AttributeSet {
 	a := crypto11.NewAttributeSet()
-	_ = a.Set(crypto11.CkaClass, pkcs11.CKO_SECRET_KEY)
-	_ = a.Set(crypto11.CkaKeyType, pkcs11.CKK_AES)
-	_ = a.Set(crypto11.CkaValueLen, 32)
-	_ = a.Set(crypto11.CkaToken, false)
-	_ = a.Set(crypto11.CkaSensitive, false)
-	_ = a.Set(crypto11.CkaExtractable, true)
+	_ = a.Set(pkcs11.CKA_CLASS, pkcs11.CKO_SECRET_KEY)
+	_ = a.Set(pkcs11.CKA_KEY_TYPE, pkcs11.CKK_AES)
+	_ = a.Set(pkcs11.CKA_VALUE_LEN, 32)
+	_ = a.Set(pkcs11.CKA_TOKEN, false)
+	_ = a.Set(pkcs11.CKA_SENSITIVE, false)
+	_ = a.Set(pkcs11.CKA_EXTRACTABLE, true)
 	return a
 }
 
