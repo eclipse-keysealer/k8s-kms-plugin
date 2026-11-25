@@ -17,6 +17,7 @@ import (
 	"log/slog"
 
 	"sync"
+	"time"
 
 	"github.com/eclipse-keypont/crypto11/v2"
 	"github.com/eclipse-keypont/gose"
@@ -1006,14 +1007,61 @@ func (p *P11) Status(ctx context.Context, _ *k8skmsv2.StatusRequest) (statusResp
 		return
 	}
 
+	// Confirm the token is actually usable, not only that configuration is present:
+	// read a few random bytes from the active context. Without this, Status reports "ok"
+	// while the HSM is down, the login has been lost, or the session pool is exhausted, so
+	// kube-apiserver never marks the provider unhealthy. The probe runs under a short
+	// deadline and off the request goroutine, so Status reflects a wedged token instead of
+	// blocking on it.
+	healthz := "ok"
+	if perr := p.probeToken(ctx); perr != nil {
+		slog.Error("p11 Status: token liveness probe failed", "error", perr)
+		healthz = "token unavailable"
+	}
+
 	statusResponse = &k8skmsv2.StatusResponse{
 		Version: "v2",
-		Healthz: "ok",
+		Healthz: healthz,
 		KeyId:   p.GetKekKeyIDString(),
 	}
 
 	slog.Log(ctx, logging.LevelTrace, "StatusResponse", "Version", statusResponse.Version, "Healthz", statusResponse.Healthz, "KeyId", statusResponse.KeyId)
 	return statusResponse, nil
+}
+
+// statusProbeTimeout bounds the Status liveness probe so Status cannot hang on a wedged
+// token or an exhausted session pool (the plugin runs crypto11 with no PoolWaitTimeout).
+const statusProbeTimeout = 3 * time.Second
+
+// probeToken reads one random byte from the active token, returning an error if the token
+// cannot serve it within statusProbeTimeout. The read runs in its own goroutine with a
+// buffered result channel, so a read that never returns (a wedged pool) leaves this
+// goroutine free to time out rather than blocking Status.
+func (p *P11) probeToken(ctx context.Context) error {
+	if p.ctx == nil {
+		return errors.New("no active PKCS#11 context")
+	}
+	ctx, cancel := context.WithTimeout(ctx, statusProbeTimeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		rng, err := p.ctx.NewRandomReader()
+		if err != nil {
+			done <- err
+			return
+		}
+		var b [1]byte
+		_, err = io.ReadFull(rng, b[:])
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // FindCkaAttrByIDOrLabel find a CKA attribute like CKA_ID or CKA_LABEL by id or by label.
