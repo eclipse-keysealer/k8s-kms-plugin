@@ -497,12 +497,17 @@ func grpcServe(gl net.Listener, p providers.Provider) (err error) {
 
 	slog.Info("serving on socket", "address", gl.Addr().String())
 
-START:
+	// grpc.Server.Serve returns only on a non-temporary listener error or once the server
+	// is stopped, and it closes the listener before returning. The previous `goto START`
+	// re-entered Serve on that same closed listener, which returned immediately and span,
+	// turning one Accept failure into a busy loop and a log flood with no recovery. Surface
+	// the error so the process can exit and be restarted by its supervisor; grpc already
+	// retries genuinely temporary Accept errors internally with backoff.
 	if err = gs.Serve(gl); err != nil {
 		slog.Error("gRPC serve error", "error", err)
-		goto START
+		return err
 	}
-	return
+	return nil
 }
 
 // unknownServiceHandler answers a call to a service or method this plugin does not implement.
