@@ -299,6 +299,10 @@ Both KEKs can live on *different* HSMs (the `serve rotation` command takes a ful
 
 `mu sync.RWMutex` guards `encryptors`, `decryptors` and `oldDecryptors` — these maps are lazily populated on
 first use, so concurrent apiserver requests race without it (this was a real fixed bug; see CHANGELOG).
+It also guards `keys`, the cache of crypto11 key objects (`pkg/providers/keycache.go`): resolve a key through
+`withKey` rather than calling `FindKey` / `FindRSAKeyPair` / `FindMLKEMKeyPair` per request, and cache only a key
+whose every use is a token operation, so that a stale handle fails and is resolved again (`rsa-oaep` encryption
+is the exception, and stays uncached).
 
 ### Size and length limits
 
