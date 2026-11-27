@@ -81,7 +81,9 @@ jobs:
 
       - name: Install grpcurl
         # The e2e suite drives the plugin's KMS v2 gRPC API with grpcurl.
-        run: go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+        # Pinned to a released version (not @latest) for reproducible builds
+        # (OpenSSF Scorecard Pinned-Dependencies).
+        run: go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.4
 
       - name: Build plugin binary
         # The e2e suite execs dist/k8s-kms-plugin.
@@ -137,8 +139,10 @@ jobs:
         uses: ./.github/actions/setup-softhsmv3-pqc
 
       # The e2e suite drives the plugin over the KMS v2 gRPC API with grpcurl.
+      # Pinned to a released version (not @latest) for reproducible builds
+      # (OpenSSF Scorecard Pinned-Dependencies).
       - name: Install grpcurl
-        run: go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+        run: go install github.com/fullstorydev/grpcurl/cmd/grpcurl@v1.9.4
 
       - name: Run integration tests
         # TestMain bootstraps an ephemeral token via the PKCS#11 API when
